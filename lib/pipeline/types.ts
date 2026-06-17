@@ -4,7 +4,7 @@ export type DocumentStatus = "pending" | "needs_review" | "confirmed";
 
 /** A due-date event extracted from a document (spec: events[] array). */
 export interface ExtractedEvent {
-  /** e.g. 更新日 / 引き渡し日 / 解約予告期限 / 支払期日 — free-form, domain-agnostic. */
+  /** e.g. 更新日 / 引き渡し日 / 解約予告期限 / 支払期日 free-form, domain-agnostic. */
   event_type: string;
   /** ISO date (YYYY-MM-DD). May be null if only a lead-time was found. */
   due_date: string | null;

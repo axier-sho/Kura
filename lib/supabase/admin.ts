@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { env, isSupabaseAdminConfigured } from "@/lib/env";
 
 /**
- * Service-role Supabase client — bypasses RLS. SERVER-ONLY.
+ * Service-role Supabase client bypasses RLS. SERVER-ONLY.
  * Used by the cron notify route (no user session) and background ingestion.
  * Returns null when the service-role key is not configured.
  */
