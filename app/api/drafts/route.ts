@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 /**
  * Generate a .docx draft (spec §7): fill a template's placeholders with a
- * document's extracted fields. The result is a DRAFT — a person reviews and
+ * document's extracted fields. The result is a DRAFT a person reviews and
  * finalizes it, then re-uploads (re-entering the pipeline, closing the loop).
  */
 export async function POST(req: NextRequest) {

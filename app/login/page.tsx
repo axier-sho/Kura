@@ -17,7 +17,7 @@ export default async function LoginPage() {
         蔵 Kura
       </Link>
       <p className="mb-6 text-center text-sm text-gray-600">
-        書類整理AI — 取り込み・分類・抽出・整理・検索・期日管理
+        書類整理AI 取り込み・分類・抽出・整理・検索・期日管理
       </p>
 
       {isSupabaseConfigured() ? (

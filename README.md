@@ -1,4 +1,16 @@
-# 蔵 Kura — 書類整理AI
+# 蔵 Kura 書類整理AI
+
+*[English README](./README.en.md)*
+
+![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
+![Google Gemini](https://img.shields.io/badge/google%20gemini-8E75B2?style=for-the-badge&logo=google%20gemini&logoColor=white)
+![Tauri](https://img.shields.io/badge/tauri-%2324C8DB.svg?style=for-the-badge&logo=tauri&logoColor=%23FFFFFF)
+![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
+![Vercel](https://img.shields.io/badge/vercel-%23000000.svg?style=for-the-badge&logo=vercel&logoColor=white)
 
 ファイルを取り込み、AI(Google Gemini)が「何の書類か」を判定して必要な情報を抽出し、
 コレクションごとに整理して、あとから**構造化検索 + 意味検索**で探せるようにするツールです。
@@ -10,22 +22,22 @@
 
 ## 主な機能
 
-1. **取り込み** — ドラッグ&ドロップ、または(デスクトップ版)**フォルダ自動監視**
-2. **分類 + 抽出** — Gemini が種別・項目・キーワード・期日イベント・確信度を1回のJSONで出力
-3. **テキスト先行 / Vision フォールバック** — DOCX・テキスト層PDFは直接抽出、画像・スキャンは Vision
-4. **解像度/モデルのエスカレーション** — 低確信度のときだけ上位モデル(`gemini-2.5-pro`)で再試行
-5. **人の確認(ヒューマンインザループ)** — AIの整理案を確認・修正してから確定。修正は正解データに
-6. **整理** — 「コレクション → 種別 → ファイル」階層 + 構造化フィルタ
-7. **検索** — 構造化(種別・コレクション・日付)+ pgvector による意味検索
-8. **期日カレンダー・通知** — 抽出した期日を自動カレンダー化し、cron + メールで事前通知
-9. **ドラフト生成** — テンプレート + 抽出項目から .docx を生成(確定は人が行う)
-10. **マルチテナント** — 全テーブルに `org_id` + RLS。将来のSaaS化に対応
+1. **取り込み** ドラッグ&ドロップ、または(デスクトップ版)**フォルダ自動監視**
+2. **分類 + 抽出** Gemini が種別・項目・キーワード・期日イベント・確信度を1回のJSONで出力
+3. **テキスト先行 / Vision フォールバック** DOCX・テキスト層PDFは直接抽出、画像・スキャンは Vision
+4. **解像度/モデルのエスカレーション** 低確信度のときだけ上位モデル(`gemini-2.5-pro`)で再試行
+5. **人の確認(ヒューマンインザループ)** AIの整理案を確認・修正してから確定。修正は正解データに
+6. **整理** 「コレクション → 種別 → ファイル」階層 + 構造化フィルタ
+7. **検索** 構造化(種別・コレクション・日付)+ pgvector による意味検索
+8. **期日カレンダー・通知** 抽出した期日を自動カレンダー化し、cron + メールで事前通知
+9. **ドラフト生成** テンプレート + 抽出項目から .docx を生成(確定は人が行う)
+10. **マルチテナント** 全テーブルに `org_id` + RLS。将来のSaaS化に対応
 
 ## 技術スタック
 
 - **Next.js 16(App Router)/ TypeScript / Tailwind CSS**
 - **Supabase**(Postgres + pgvector + RLS + Auth + Storage)
-- **Google Gemini API**(`@google/genai`)— 分類・抽出(マルチモーダル)・埋め込み
+- **Google Gemini API**(`@google/genai`) 分類・抽出(マルチモーダル)・埋め込み
 - **Tauri 2**(Windows デスクトップ版 + フォルダ自動監視)
 - **docx**(ドラフト生成)/ **Resend**(メール通知)/ **Vercel Cron**(定期通知)
 

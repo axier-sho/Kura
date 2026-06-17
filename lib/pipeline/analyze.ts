@@ -103,7 +103,7 @@ function visionMimeType(input: IngestInput): string | null {
 
 /**
  * Build the request parts. Returns null when the input needs vision but isn't a
- * vision-capable type AND has no text — the caller then returns a stub rather
+ * vision-capable type AND has no text the caller then returns a stub rather
  * than sending arbitrary bytes mislabeled as image/png.
  */
 function buildParts(
