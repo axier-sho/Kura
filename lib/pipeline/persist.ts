@@ -1,0 +1,97 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { env } from "@/lib/env";
+import { sha256 } from "@/lib/hash";
+import { PROMPT_VERSION } from "@/lib/pipeline/prompts";
+import type { PipelineOutput } from "@/lib/pipeline";
+import type { IngestInput } from "@/lib/pipeline/types";
+
+export interface PersistResult {
+  documentId: string;
+  cached: boolean;
+}
+
+/** Format a JS number[] for a pgvector column (text input form: "[1,2,3]"). */
+function toVectorLiteral(v: number[] | null): string | null {
+  return v ? `[${v.join(",")}]` : null;
+}
+
+/**
+ * Persist a pipeline result: upload original to Storage, upsert the document
+ * row keyed by content hash (cache = index, spec §3), and insert due-date
+ * events. Returns the existing row untouched on a cache hit.
+ */
+export async function persistDocument(
+  supabase: SupabaseClient,
+  orgId: string,
+  input: IngestInput,
+  output: PipelineOutput,
+  collectionId: string | null,
+): Promise<PersistResult> {
+  const hash = sha256(input.bytes);
+
+  // Cache check: same content + same prompt version → reuse (no re-scan).
+  const { data: existing } = await supabase
+    .from("documents")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("content_hash", hash)
+    .eq("prompt_version", PROMPT_VERSION)
+    .maybeSingle();
+
+  if (existing?.id) return { documentId: existing.id, cached: true };
+
+  // Upload original file (path prefixed by org for the storage RLS policy).
+  const storagePath = `${orgId}/${hash}-${input.filename}`;
+  await supabase.storage
+    .from(env.storageBucket)
+    .upload(storagePath, Buffer.from(input.bytes), {
+      contentType: input.mimeType,
+      upsert: true,
+    });
+
+  const { analysis, embedding } = output;
+
+  const { data: doc, error } = await supabase
+    .from("documents")
+    .insert({
+      org_id: orgId,
+      collection_id: collectionId,
+      content_hash: hash,
+      doc_type: analysis.doc_type,
+      title: analysis.title,
+      extracted_fields: analysis.fields,
+      keywords: analysis.keywords,
+      embedding: toVectorLiteral(embedding),
+      confidence: analysis.confidence,
+      model: analysis.model,
+      prompt_version: analysis.prompt_version,
+      status: "needs_review",
+      storage_path: storagePath,
+      original_filename: input.filename,
+      mime_type: input.mimeType,
+      is_stub: analysis.is_stub,
+    })
+    .select("id")
+    .single();
+
+  if (error || !doc) {
+    throw new Error(`書類の保存に失敗しました: ${error?.message ?? "unknown"}`);
+  }
+
+  if (analysis.events.length > 0) {
+    await supabase.from("events").insert(
+      analysis.events.map((e) => ({
+        org_id: orgId,
+        document_id: doc.id,
+        collection_id: collectionId,
+        event_type: e.event_type,
+        due_date: e.due_date,
+        notify_lead_days: e.notify_lead_days,
+        action_needed: e.action_needed,
+        status: "open" as const,
+      })),
+    );
+  }
+
+  return { documentId: doc.id, cached: false };
+}
