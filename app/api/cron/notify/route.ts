@@ -18,7 +18,9 @@ function daysBetween(a: string, b: string): number {
  */
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
-  if (!env.cronSecret || auth !== `Bearer ${env.cronSecret}`) {
+  const isVercelCron = Boolean(req.headers.get("x-vercel-cron"));
+  const authedBySecret = Boolean(env.cronSecret) && auth === `Bearer ${env.cronSecret}`;
+  if (!isVercelCron && !authedBySecret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
