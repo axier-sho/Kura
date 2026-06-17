@@ -11,9 +11,13 @@ export async function createCollection(formData: FormData): Promise<void> {
   if (!name) return;
   const description = String(formData.get("description") ?? "").trim() || null;
 
-  await supabase
+  const { error } = await supabase
     .from("collections")
     .insert({ org_id: orgId, name, description });
+
+  if (error) {
+    throw new Error(`コレクションの作成に失敗しました: ${error.message}`);
+  }
 
   revalidatePath("/collections");
 }

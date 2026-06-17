@@ -18,11 +18,16 @@ export async function sendEmail(opts: {
   }
 
   const resend = new Resend(env.resendApiKey);
-  await resend.emails.send({
+  // Resend resolves with { error } on API-level failures (unverified domain,
+  // invalid recipient, 4xx/5xx) rather than throwing, so check it explicitly.
+  const { error } = await resend.emails.send({
     from: env.notifyFromEmail,
     to: opts.to,
     subject: opts.subject,
     html: opts.html,
   });
+  if (error) {
+    throw new Error(`メール送信に失敗しました: ${error.message}`);
+  }
   return { sent: true };
 }

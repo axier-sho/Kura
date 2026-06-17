@@ -35,13 +35,31 @@ export default async function CollectionDetailPage({
     );
   }
 
-  const { data: collection } = await supabase
+  const { data: collection, error: collectionError } = await supabase
     .from("collections")
     .select("*")
     .eq("id", id)
     .maybeSingle();
+  if (collectionError) {
+    throw new Error(`コレクションの取得に失敗しました: ${collectionError.message}`);
+  }
   if (!collection) notFound();
   const col = collection as CollectionRow;
+
+  // searchParams are untrusted; only apply date filters that are real
+  // calendar dates so a bad value can't fail the timestamptz cast server-side.
+  // (A bare regex would let an impossible date like 2026-02-30 through.)
+  const isDate = (s?: string): s is string => {
+    const m = typeof s === "string" ? s.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+    if (!m) return false;
+    const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const dt = new Date(Date.UTC(year, month - 1, day));
+    return (
+      dt.getUTCFullYear() === year &&
+      dt.getUTCMonth() === month - 1 &&
+      dt.getUTCDate() === day
+    );
+  };
 
   let query = supabase
     .from("documents")
@@ -49,16 +67,22 @@ export default async function CollectionDetailPage({
     .eq("collection_id", id)
     .order("created_at", { ascending: false });
   if (type) query = query.eq("doc_type", type);
-  if (from) query = query.gte("created_at", from);
-  if (to) query = query.lte("created_at", `${to}T23:59:59`);
-  const { data } = await query;
+  if (isDate(from)) query = query.gte("created_at", from);
+  if (isDate(to)) query = query.lte("created_at", `${to}T23:59:59`);
+  const { data, error: docsError } = await query;
+  if (docsError) {
+    throw new Error(`書類の取得に失敗しました: ${docsError.message}`);
+  }
   const docs = (data as DocumentRow[]) ?? [];
 
   // doc_type list for the filter (from all docs in this collection).
-  const { data: allTypes } = await supabase
+  const { data: allTypes, error: typesError } = await supabase
     .from("documents")
     .select("doc_type")
     .eq("collection_id", id);
+  if (typesError) {
+    throw new Error(`種別一覧の取得に失敗しました: ${typesError.message}`);
+  }
   const types = Array.from(
     new Set((allTypes ?? []).map((r) => r.doc_type).filter(Boolean)),
   ) as string[];

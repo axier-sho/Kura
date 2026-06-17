@@ -19,17 +19,35 @@ export async function reviewDocument(formData: FormData): Promise<void> {
   const docType = String(formData.get("doc_type") ?? "").trim();
   const collectionId = String(formData.get("collection_id") ?? "") || null;
 
-  // Reconstruct extracted_fields from field__<key> inputs.
-  const fields: Record<string, string> = {};
+  // Reconstruct extracted_fields from field__<key> inputs. The form carries the
+  // original value type in fieldtype__<key> so numeric fields stay numbers
+  // (the column is Record<string, string | number | null>); coercing everything
+  // to string would corrupt the documented correction record.
+  const fieldTypes: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
-    if (key.startsWith("field__")) {
-      const fieldKey = key.slice("field__".length);
-      const v = String(value).trim();
-      if (fieldKey && v) fields[fieldKey] = v;
+    if (key.startsWith("fieldtype__")) {
+      fieldTypes[key.slice("fieldtype__".length)] = String(value);
+    }
+  }
+  const fields: Record<string, string | number | null> = {};
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("field__")) continue;
+    const fieldKey = key.slice("field__".length);
+    if (!fieldKey) continue;
+    const v = String(value).trim();
+    if (v === "") {
+      // A blanked field is preserved as null (an edit/correction) rather than
+      // silently dropped from the record.
+      fields[fieldKey] = null;
+    } else if (fieldTypes[fieldKey] === "number") {
+      const n = Number(v);
+      fields[fieldKey] = Number.isFinite(n) ? n : v;
+    } else {
+      fields[fieldKey] = v;
     }
   }
 
-  await supabase
+  const { error } = await supabase
     .from("documents")
     .update({
       title: title || null,
@@ -40,6 +58,10 @@ export async function reviewDocument(formData: FormData): Promise<void> {
     })
     .eq("id", id)
     .eq("org_id", orgId);
+
+  if (error) {
+    throw new Error(`書類の更新に失敗しました: ${error.message}`);
+  }
 
   revalidatePath("/review");
   revalidatePath("/collections");

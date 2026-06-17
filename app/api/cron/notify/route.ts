@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
   }
 
   let notified = 0;
+  const failedOrgs: string[] = [];
   for (const [orgId, orgEvents] of byOrg) {
     const { data: profile } = await admin
       .from("profiles")
@@ -75,6 +76,13 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
 
     const to = profile?.email;
+    if (!to) {
+      // No recipient: leave notified_at null so these events are retried once
+      // an org email exists, rather than being permanently marked notified.
+      console.log(`[kura] org ${orgId}: 宛先メールなし。${orgEvents.length}件未通知。`);
+      continue;
+    }
+
     const rows = orgEvents
       .map(
         (e) =>
@@ -85,19 +93,37 @@ export async function GET(req: NextRequest) {
       .join("");
     const html = `<p>期日が近づいている項目が ${orgEvents.length} 件あります。</p><ul>${rows}</ul>`;
 
-    if (to) {
-      await sendEmail({ to, subject: "【Kura】期日のお知らせ", html });
-    } else {
-      console.log(`[kura] org ${orgId}: 宛先メールなし。${orgEvents.length}件未通知。`);
+    try {
+      const { sent } = await sendEmail({ to, subject: "【Kura】期日のお知らせ", html });
+      if (!sent) {
+        // Email not configured: don't stamp, so nothing is silently suppressed.
+        console.log(`[kura] org ${orgId}: メール未送信。${orgEvents.length}件未通知。`);
+        continue;
+      }
+    } catch (e) {
+      // Delivery failed: leave notified_at null so the next run retries.
+      console.error(`[kura] org ${orgId}: メール送信に失敗しました。`, e);
+      failedOrgs.push(orgId);
+      continue;
     }
 
+    // Only stamp notified_at after a confirmed successful send.
     const ids = orgEvents.map((e) => e.id);
-    await admin
+    const { error: updateError } = await admin
       .from("events")
       .update({ notified_at: new Date().toISOString() })
       .in("id", ids);
+    if (updateError) {
+      // Stamp failed after a successful send (events may be re-sent next run);
+      // surface it rather than reporting clean success.
+      console.error(`[kura] org ${orgId}: notified_at の更新に失敗しました。`, updateError);
+      failedOrgs.push(orgId);
+      continue;
+    }
     notified += orgEvents.length;
   }
 
-  return NextResponse.json({ notified });
+  return NextResponse.json(
+    failedOrgs.length > 0 ? { notified, failed: failedOrgs.length } : { notified },
+  );
 }

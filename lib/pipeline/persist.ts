@@ -30,7 +30,7 @@ export async function persistDocument(
   const hash = sha256(input.bytes);
 
   // Cache check: same content + same prompt version → reuse (no re-scan).
-  const { data: existing } = await supabase
+  const { data: existing, error: lookupError } = await supabase
     .from("documents")
     .select("id")
     .eq("org_id", orgId)
@@ -38,6 +38,9 @@ export async function persistDocument(
     .eq("prompt_version", PROMPT_VERSION)
     .maybeSingle();
 
+  if (lookupError) {
+    throw new Error(`キャッシュ確認に失敗しました: ${lookupError.message}`);
+  }
   if (existing?.id) return { documentId: existing.id, cached: true };
 
   // Upload original file (path prefixed by org for the storage RLS policy).
@@ -100,7 +103,7 @@ export async function persistDocument(
   }
 
   if (analysis.events.length > 0) {
-    await supabase.from("events").insert(
+    const { error: eventsError } = await supabase.from("events").insert(
       analysis.events.map((e) => ({
         org_id: orgId,
         document_id: doc.id,
@@ -112,6 +115,9 @@ export async function persistDocument(
         status: "open" as const,
       })),
     );
+    if (eventsError) {
+      throw new Error(`期日イベントの保存に失敗しました: ${eventsError.message}`);
+    }
   }
 
   return { documentId: doc.id, cached: false };

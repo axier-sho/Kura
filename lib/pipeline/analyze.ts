@@ -29,6 +29,25 @@ function toStr(v: unknown): string | null {
   return null;
 }
 
+/**
+ * True only for real YYYY-MM-DD calendar dates. A bare regex accepts impossible
+ * dates (e.g. 2026-02-30), which the Postgres `date` column rejects, failing the
+ * whole events insert; round-tripping through Date catches those.
+ */
+function isRealCalendarDate(s: string): boolean {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
 function normalizeEvents(raw: unknown): ExtractedEvent[] {
   if (!Array.isArray(raw)) return [];
   const out: ExtractedEvent[] = [];
@@ -38,7 +57,7 @@ function normalizeEvents(raw: unknown): ExtractedEvent[] {
     const eventType = toStr(r.event_type);
     if (!eventType) continue;
     let due = toStr(r.due_date);
-    if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) due = null;
+    if (due && !isRealCalendarDate(due)) due = null;
     const lead = Number(r.notify_lead_days);
     out.push({
       event_type: eventType,

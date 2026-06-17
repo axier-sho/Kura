@@ -44,6 +44,10 @@ export default async function DashboardPage() {
         .order("due_date", { ascending: true })
         .limit(5),
     ]);
+    const failed = nr.error ?? cf.error ?? col.error ?? ev.error;
+    if (failed) {
+      throw new Error(`ダッシュボードの読み込みに失敗しました: ${failed.message}`);
+    }
     needsReview = nr.count ?? 0;
     confirmed = cf.count ?? 0;
     collections = col.count ?? 0;

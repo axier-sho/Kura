@@ -6,6 +6,24 @@
  * (the AI pipeline returns clearly-labeled stubs, email is logged, etc.).
  */
 
+/**
+ * Parse the embedding dimension. A non-numeric override (e.g. "768px") would
+ * become NaN and serialize to null in the API call, silently producing a
+ * wrong-length vector that fails the pgvector column; fall back to 768 instead.
+ */
+function parseEmbeddingDim(raw: string | undefined): number {
+  const n = Number(raw ?? "768");
+  if (!Number.isInteger(n) || n <= 0) {
+    if (raw !== undefined) {
+      console.warn(
+        `[kura] GEMINI_EMBEDDING_DIM="${raw}" は不正です。768 を使用します。`,
+      );
+    }
+    return 768;
+  }
+  return n;
+}
+
 export const env = {
   // Supabase
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -18,7 +36,7 @@ export const env = {
   geminiModel: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
   geminiModelEscalation: process.env.GEMINI_MODEL_ESCALATION ?? "gemini-2.5-pro",
   geminiEmbeddingModel: process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001",
-  geminiEmbeddingDim: Number(process.env.GEMINI_EMBEDDING_DIM ?? "768"),
+  geminiEmbeddingDim: parseEmbeddingDim(process.env.GEMINI_EMBEDDING_DIM),
 
   // Email
   resendApiKey: process.env.RESEND_API_KEY ?? "",
