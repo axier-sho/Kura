@@ -12,7 +12,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Kura — 書類整理AI",
+        "title": "Kura 書類整理AI",
         "width": 1200,
         "height": 820,
         "url": "http://localhost:3000"
