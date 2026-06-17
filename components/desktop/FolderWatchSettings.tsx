@@ -56,6 +56,9 @@ export function FolderWatchSettings() {
     async (path: string) => {
       const tauri = getTauri();
       if (!tauri) return;
+      // Dedupe only while a path is in flight (the watcher can fire several
+      // events for one write). A later "changed" event for the same path is
+      // re-ingested once processing completes.
       if (seen.current.has(path)) return;
       seen.current.add(path);
       try {
@@ -71,6 +74,8 @@ export function FolderWatchSettings() {
         addLog(res.ok ? `取り込み: ${file.name}` : `失敗: ${file.name}`);
       } catch (e) {
         addLog(`エラー: ${(e as Error).message}`);
+      } finally {
+        seen.current.delete(path);
       }
     },
     [addLog],
