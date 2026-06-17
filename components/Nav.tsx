@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "./Logo";
 
 const links = [
   { href: "/", label: "ダッシュボード" },
@@ -14,8 +15,8 @@ export function Nav({ email }: { email?: string | null }) {
   return (
     <header className="border-b border-gray-200 bg-white">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-        <Link href="/" className="text-lg font-bold text-kura-accent">
-          蔵 Kura
+        <Link href="/" aria-label="Kura" className="shrink-0">
+          <Logo />
         </Link>
         <nav className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {links.map((l) => (
