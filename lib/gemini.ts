@@ -16,7 +16,7 @@ export type GeminiPart =
 
 /**
  * Single text/multimodal generation returning the raw text response.
- * Throws if Gemini is not configured — callers gate on isGeminiConfigured().
+ * Throws if Gemini is not configured callers gate on isGeminiConfigured().
  */
 export async function generate(opts: {
   model: string;

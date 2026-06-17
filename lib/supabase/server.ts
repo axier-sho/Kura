@@ -7,7 +7,7 @@ import { env, isSupabaseConfigured } from "@/lib/env";
 
 /**
  * Supabase client for Server Components / Route Handlers / Server Actions.
- * Returns null when Supabase is not configured (env-gating) — callers handle it.
+ * Returns null when Supabase is not configured (env-gating) callers handle it.
  */
 export async function createClient(): Promise<SupabaseClient | null> {
   if (!isSupabaseConfigured()) return null;
@@ -25,7 +25,7 @@ export async function createClient(): Promise<SupabaseClient | null> {
             cookieStore.set(name, value, options),
           );
         } catch {
-          // Called from a Server Component — safe to ignore; middleware refreshes.
+          // Called from a Server Component safe to ignore; middleware refreshes.
         }
       },
     },

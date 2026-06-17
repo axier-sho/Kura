@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     const rows = orgEvents
       .map(
         (e) =>
-          `<li><b>${e.event_type}</b> — 期日 ${e.due_date}${
+          `<li><b>${e.event_type}</b> 期日 ${e.due_date}${
             e.action_needed ? `(${e.action_needed})` : ""
           }</li>`,
       )

@@ -1,5 +1,5 @@
 -- ============================================================================
--- Kura — initial schema
+-- Kura initial schema
 --
 -- Multi-tenant from day one: every table carries org_id and is protected by
 -- Row Level Security scoped to the caller's organization (spec §5).
