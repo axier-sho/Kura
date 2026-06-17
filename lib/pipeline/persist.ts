@@ -42,12 +42,17 @@ export async function persistDocument(
 
   // Upload original file (path prefixed by org for the storage RLS policy).
   const storagePath = `${orgId}/${hash}-${input.filename}`;
-  await supabase.storage
+  const { error: uploadError } = await supabase.storage
     .from(env.storageBucket)
     .upload(storagePath, Buffer.from(input.bytes), {
       contentType: input.mimeType,
       upsert: true,
     });
+  if (uploadError) {
+    throw new Error(
+      `ファイルのアップロードに失敗しました: ${uploadError.message}`,
+    );
+  }
 
   const { analysis, embedding } = output;
 
@@ -74,8 +79,24 @@ export async function persistDocument(
     .select("id")
     .single();
 
-  if (error || !doc) {
-    throw new Error(`書類の保存に失敗しました: ${error?.message ?? "unknown"}`);
+  if (error) {
+    // A concurrent ingest of the same content can race past the cache check
+    // above and hit the unique(org_id, content_hash, prompt_version) constraint.
+    // Treat that as a cache hit by returning the row the other request created.
+    if (error.code === "23505") {
+      const { data: raced } = await supabase
+        .from("documents")
+        .select("id")
+        .eq("org_id", orgId)
+        .eq("content_hash", hash)
+        .eq("prompt_version", PROMPT_VERSION)
+        .maybeSingle();
+      if (raced?.id) return { documentId: raced.id, cached: true };
+    }
+    throw new Error(`書類の保存に失敗しました: ${error.message}`);
+  }
+  if (!doc) {
+    throw new Error("書類の保存に失敗しました: unknown");
   }
 
   if (analysis.events.length > 0) {

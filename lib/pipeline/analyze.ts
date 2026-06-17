@@ -88,17 +88,36 @@ function parseAnalysis(text: string, model: string): AnalysisResult {
   };
 }
 
+/** Resolve a Gemini-supported vision MIME type, or null if unsupported. */
+function visionMimeType(input: IngestInput): string | null {
+  const mime = input.mimeType.toLowerCase();
+  const name = input.filename.toLowerCase();
+  if (mime.startsWith("image/")) return input.mimeType;
+  if (mime === "application/pdf" || name.endsWith(".pdf")) return "application/pdf";
+  if (/\.(png)$/.test(name)) return "image/png";
+  if (/\.(jpe?g)$/.test(name)) return "image/jpeg";
+  if (/\.(webp)$/.test(name)) return "image/webp";
+  if (/\.(gif)$/.test(name)) return "image/gif";
+  return null;
+}
+
+/**
+ * Build the request parts. Returns null when the input needs vision but isn't a
+ * vision-capable type AND has no text — the caller then returns a stub rather
+ * than sending arbitrary bytes mislabeled as image/png.
+ */
 function buildParts(
   extracted: ExtractedText,
   input: IngestInput,
-): GeminiPart[] {
+): GeminiPart[] | null {
   if (extracted.needsVision) {
+    const mimeType = visionMimeType(input);
+    if (!mimeType) {
+      // Unsupported binary (e.g. failed DOCX extraction, unknown extension).
+      const text = extracted.text.trim();
+      return text ? [{ text: buildTextPrompt(text) }] : null;
+    }
     const data = Buffer.from(input.bytes).toString("base64");
-    const mimeType = input.mimeType.startsWith("image/")
-      ? input.mimeType
-      : input.mimeType === "application/pdf"
-        ? "application/pdf"
-        : "image/png";
     return [{ text: buildVisionPrompt() }, { inlineData: { mimeType, data } }];
   }
   return [{ text: buildTextPrompt(extracted.text) }];
@@ -130,6 +149,9 @@ export async function analyze(
   if (!isGeminiConfigured()) return stubResult(input);
 
   const parts = buildParts(extracted, input);
+  if (!parts) {
+    return { ...stubResult(input), doc_type: "未分類(形式非対応)" };
+  }
 
   let result: AnalysisResult;
   try {

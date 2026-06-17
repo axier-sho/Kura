@@ -221,10 +221,14 @@ create policy org_rw on public.organizations
   for all using (id = public.current_org_id())
   with check (id = public.current_org_id());
 
--- profiles: a user sees/edits only their own profile row
+-- profiles: a user sees/edits only their own profile row, and cannot move it
+-- to another org (org_id is pinned to their membership org). The signup
+-- bootstrap inserts via a SECURITY DEFINER trigger, which bypasses this.
 drop policy if exists profiles_rw on public.profiles;
 create policy profiles_rw on public.profiles
-  for all using (id = auth.uid()) with check (id = auth.uid());
+  for all
+  using (id = auth.uid())
+  with check (id = auth.uid() and org_id = public.current_org_id());
 
 -- memberships: a user sees only their own membership rows
 drop policy if exists memberships_r on public.memberships;
