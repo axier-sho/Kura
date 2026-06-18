@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { isGeminiConfigured } from "@/lib/env";
+import { getAiConfig } from "@/lib/ai/config";
 import { embed } from "@/lib/gemini";
 import * as documents from "@/lib/db/repositories/documents";
 
@@ -25,10 +25,11 @@ export async function POST(req: NextRequest) {
     ids.add(id),
   );
 
-  // --- semantic ---
+  // --- semantic (uses the locally configured Gemini key) ---
   let semanticUsed = false;
-  if (q && isGeminiConfigured()) {
-    const vec = await embed(q);
+  const ai = getAiConfig();
+  if (q && ai.configured) {
+    const vec = await embed({ apiKey: ai.apiKey, text: q });
     if (vec) {
       semanticUsed = true;
       documents.searchByEmbedding(vec, collectionId, 20).forEach((m) => {

@@ -2,6 +2,22 @@
 
 import { useState } from "react";
 
+/** Extract the download filename from a Content-Disposition header. */
+function filenameFromDisposition(cd: string | null, fallback: string): string {
+  if (!cd) return fallback;
+  const star = cd.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // fall through to the plain form
+    }
+  }
+  const plain = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+  if (plain) return plain[1].trim();
+  return fallback;
+}
+
 export function DraftGenerator({
   templates,
   documents,
@@ -28,11 +44,15 @@ export function DraftGenerator({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "生成に失敗しました");
       }
+      const filename = filenameFromDisposition(
+        res.headers.get("Content-Disposition"),
+        "draft.docx",
+      );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "draft.docx";
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {

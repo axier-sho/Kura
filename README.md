@@ -62,8 +62,12 @@ cp .env.example .env.local
 
 `.env.local` を編集:
 
-- **Gemini**(任意): `GEMINI_API_KEY`(https://aistudio.google.com/apikey)
-  未設定でも動作します(AIは「未設定」のスタブ結果を返します)。
+- **Gemini**(推奨): 自分のキーをアプリ内の **設定 / Settings** で登録します
+  (https://aistudio.google.com/apikey)。キーは暗号化して保存されます。`.env.local` の
+  `GEMINI_API_KEY` は自己ホスト用の任意フォールバックです。未設定でも動作します
+  (AIは「未設定」のスタブ結果を返します)。
+- **暗号化キー**(本番では推奨): `KURA_ENCRYPTION_KEY`。保存する Gemini キーを暗号化
+  します。未設定時は平文保存(警告ログ)。
 - **データ保存先**(任意): `KURA_DATA_DIR`。未設定時はOSのユーザーデータ領域を使用
   (例: `~/.local/share/kura`、`%APPDATA%\kura`、`~/Library/Application Support/kura`)。
 
