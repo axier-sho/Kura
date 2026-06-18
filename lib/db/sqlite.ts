@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS templates (
   version    INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT,
+  updated_at TEXT NOT NULL
+);
 `;
 
 function open(): Database.Database {
