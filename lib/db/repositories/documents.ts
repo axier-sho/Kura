@@ -197,6 +197,33 @@ export function updateReview(id: string, update: ReviewUpdate): void {
     });
 }
 
+/**
+ * Update a document's physical location, collection, and status. Used by
+ * organize mode after a file is moved into a category subfolder (or left in
+ * the inbox for review). Additive to the review flow; does not touch fields.
+ */
+export function updateLocation(
+  id: string,
+  storagePath: string,
+  collectionId: string | null,
+  status: DocumentRow["status"],
+): void {
+  getDb()
+    .prepare(
+      `UPDATE documents
+         SET storage_path = @storage_path, collection_id = @collection_id,
+             status = @status, updated_at = @updated_at
+       WHERE id = @id`,
+    )
+    .run({
+      id,
+      storage_path: storagePath,
+      collection_id: collectionId,
+      status,
+      updated_at: now(),
+    });
+}
+
 /** Structured search: title / doc_type LIKE, optionally scoped to a collection. */
 export function searchStructured(
   q: string,
