@@ -169,4 +169,4 @@ src-tauri/           Windows デスクトップ(Rust + フォルダ監視)
 
 ## ライセンス
 
-Private.
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0) の下で公開されています。
