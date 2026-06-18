@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSessionContext } from "@/lib/auth";
-import { isGeminiConfigured, isSupabaseConfigured } from "@/lib/env";
+import { getAiConfigForUser } from "@/lib/ai/config";
+import { isSupabaseConfigured } from "@/lib/env";
 import { PageShell } from "@/components/PageShell";
 import { SetupNotice } from "@/components/SetupNotice";
 import { FolderWatchSettings } from "@/components/desktop/FolderWatchSettings";
@@ -24,6 +25,11 @@ export default async function DashboardPage() {
   let confirmed = 0;
   let collections = 0;
   let upcoming: EventRow[] = [];
+  let aiConfigured = false;
+
+  if (supabase && user) {
+    aiConfigured = (await getAiConfigForUser(supabase, user.id)).configured;
+  }
 
   if (supabase && orgId) {
     const [nr, cf, col, ev] = await Promise.all([
@@ -67,10 +73,14 @@ export default async function DashboardPage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {!isGeminiConfigured() && (
+          {!aiConfigured && (
             <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900">
-              GEMINI_API_KEY が未設定です。取り込みは動作しますが、分類・抽出・意味検索は
-              「未設定」のスタブになります。
+              AI を使うには{" "}
+              <Link href="/settings" className="font-medium underline">
+                設定
+              </Link>{" "}
+              で自分の Gemini API キーを登録してください。未登録の間も取り込みは動作しますが、
+              分類・抽出・意味検索は「未設定」のスタブになります。
             </div>
           )}
 

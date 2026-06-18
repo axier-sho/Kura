@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionContext } from "@/lib/auth";
+import { getAiConfigForUser } from "@/lib/ai/config";
 import { runPipeline } from "@/lib/pipeline";
 import { persistDocument } from "@/lib/pipeline/persist";
 
@@ -13,13 +14,16 @@ export const maxDuration = 60;
  * folder-watcher (which POSTs watched files here with the user's session).
  */
 export async function POST(req: NextRequest) {
-  const { supabase, orgId } = await getSessionContext();
-  if (!supabase || !orgId) {
+  const { supabase, user, orgId } = await getSessionContext();
+  if (!supabase || !orgId || !user) {
     return NextResponse.json(
       { error: "未認証です(Supabase の設定とログインが必要です)。" },
       { status: 401 },
     );
   }
+
+  // BYOK: resolve this user's API key + model choices for the whole batch.
+  const ai = await getAiConfigForUser(supabase, user.id);
 
   const form = await req.formData();
   const collectionId = (form.get("collection_id") as string) || null;
@@ -42,7 +46,7 @@ export async function POST(req: NextRequest) {
       mimeType: file.type || "application/octet-stream",
     };
     try {
-      const output = await runPipeline(input);
+      const output = await runPipeline(input, ai);
       const { documentId, cached } = await persistDocument(
         supabase,
         orgId,

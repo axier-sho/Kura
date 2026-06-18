@@ -1,4 +1,4 @@
-import { env, isGeminiConfigured } from "@/lib/env";
+import type { AiConfig } from "@/lib/ai/config";
 import { generate, type GeminiPart } from "@/lib/gemini";
 import {
   PROMPT_VERSION,
@@ -164,8 +164,9 @@ function stubResult(input: IngestInput): AnalysisResult {
 export async function analyze(
   extracted: ExtractedText,
   input: IngestInput,
+  ai: AiConfig,
 ): Promise<AnalysisResult> {
-  if (!isGeminiConfigured()) return stubResult(input);
+  if (!ai.configured) return stubResult(input);
 
   const parts = buildParts(extracted, input);
   if (!parts) {
@@ -175,12 +176,13 @@ export async function analyze(
   let result: AnalysisResult;
   try {
     const text = await generate({
-      model: env.geminiModel,
+      apiKey: ai.apiKey,
+      model: ai.model,
       systemInstruction: SYSTEM_INSTRUCTION,
       parts,
       json: true,
     });
-    result = parseAnalysis(text, env.geminiModel);
+    result = parseAnalysis(text, ai.model);
   } catch (err) {
     console.error("[kura] analyze flash failed:", err);
     return { ...stubResult(input), doc_type: "未分類(解析エラー)" };
@@ -190,17 +192,18 @@ export async function analyze(
   // first pass is not confident.
   if (
     result.confidence < ESCALATION_THRESHOLD &&
-    env.geminiModelEscalation &&
-    env.geminiModelEscalation !== env.geminiModel
+    ai.modelEscalation &&
+    ai.modelEscalation !== ai.model
   ) {
     try {
       const text = await generate({
-        model: env.geminiModelEscalation,
+        apiKey: ai.apiKey,
+        model: ai.modelEscalation,
         systemInstruction: SYSTEM_INSTRUCTION,
         parts,
         json: true,
       });
-      const escalated = parseAnalysis(text, env.geminiModelEscalation);
+      const escalated = parseAnalysis(text, ai.modelEscalation);
       if (escalated.confidence >= result.confidence) result = escalated;
     } catch (err) {
       console.error("[kura] analyze escalation failed:", err);

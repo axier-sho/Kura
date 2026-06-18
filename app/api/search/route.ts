@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionContext } from "@/lib/auth";
-import { isGeminiConfigured } from "@/lib/env";
+import { getAiConfigForUser } from "@/lib/ai/config";
 import { embed } from "@/lib/gemini";
 import type { DocumentRow } from "@/lib/db/types";
 
@@ -12,8 +12,8 @@ export const runtime = "nodejs";
  * semantic hits first by similarity.
  */
 export async function POST(req: NextRequest) {
-  const { supabase, orgId } = await getSessionContext();
-  if (!supabase || !orgId) {
+  const { supabase, user, orgId } = await getSessionContext();
+  if (!supabase || !orgId || !user) {
     return NextResponse.json({ error: "未認証" }, { status: 401 });
   }
 
@@ -35,10 +35,11 @@ export async function POST(req: NextRequest) {
   const { data: structured } = await sq.limit(50);
   structured?.forEach((r) => ids.add(r.id as string));
 
-  // --- semantic ---
+  // --- semantic (uses the user's own Gemini key) ---
   let semanticUsed = false;
-  if (q && isGeminiConfigured()) {
-    const vec = await embed(q);
+  const ai = await getAiConfigForUser(supabase, user.id);
+  if (q && ai.configured) {
+    const vec = await embed({ apiKey: ai.apiKey, text: q });
     if (vec) {
       semanticUsed = true;
       const { data: matches } = await supabase.rpc("match_documents", {

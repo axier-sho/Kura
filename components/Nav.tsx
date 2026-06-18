@@ -9,6 +9,7 @@ const links = [
   { href: "/search", label: "検索" },
   { href: "/calendar", label: "カレンダー" },
   { href: "/templates", label: "テンプレート" },
+  { href: "/settings", label: "設定" },
 ];
 
 export function Nav({ email }: { email?: string | null }) {
