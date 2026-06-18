@@ -3,6 +3,7 @@ import Link from "next/link";
 const links = [
   { href: "/", label: "ダッシュボード" },
   { href: "/upload", label: "取り込み" },
+  { href: "/organize", label: "整理" },
   { href: "/review", label: "確認待ち" },
   { href: "/collections", label: "コレクション" },
   { href: "/search", label: "検索" },
