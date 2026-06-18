@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { getAiConfig } from "@/lib/ai/config";
 import { runPipeline } from "@/lib/pipeline";
 import { persistDocument } from "@/lib/pipeline/persist";
 
@@ -25,6 +26,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // BYOK: resolve the local API key + model choices for the whole batch.
+  const ai = getAiConfig();
+
   const results: Array<Record<string, unknown>> = [];
   for (const file of files) {
     const input = {
@@ -33,7 +37,7 @@ export async function POST(req: NextRequest) {
       mimeType: file.type || "application/octet-stream",
     };
     try {
-      const output = await runPipeline(input);
+      const output = await runPipeline(input, ai);
       const { documentId, cached } = await persistDocument(
         input,
         output,

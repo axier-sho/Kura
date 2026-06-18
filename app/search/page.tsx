@@ -1,4 +1,4 @@
-import { isGeminiConfigured } from "@/lib/env";
+import { isAiConfigured } from "@/lib/ai/config";
 import { PageShell } from "@/components/PageShell";
 import { SearchBox } from "@/components/SearchBox";
 import * as collectionsRepo from "@/lib/db/repositories/collections";
@@ -13,7 +13,7 @@ export default async function SearchPage() {
       title="検索"
       description="種別やコレクションで絞り込みつつ、あいまいな言葉でも意味検索できます。"
     >
-      <SearchBox collections={collections} geminiEnabled={isGeminiConfigured()} />
+      <SearchBox collections={collections} geminiEnabled={isAiConfigured()} />
     </PageShell>
   );
 }

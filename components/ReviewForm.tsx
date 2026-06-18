@@ -78,6 +78,11 @@ export function ReviewForm({
                   {key}
                 </span>
                 <input
+                  type="hidden"
+                  name={`fieldtype__${key}`}
+                  value={value === null ? "null" : typeof value}
+                />
+                <input
                   name={`field__${key}`}
                   defaultValue={value === null ? "" : String(value)}
                   className="input col-span-2"

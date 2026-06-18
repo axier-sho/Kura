@@ -71,7 +71,17 @@ export function FolderWatchSettings() {
         const fd = new FormData();
         fd.append("files", blob);
         const res = await fetch("/api/documents", { method: "POST", body: fd });
-        addLog(res.ok ? `取り込み: ${file.name}` : `失敗: ${file.name}`);
+        // /api/documents returns 200 with a per-file `error` when the pipeline
+        // fails, so res.ok alone would log a failed ingest as success.
+        const body = (await res.json().catch(() => null)) as
+          | { results?: Array<{ error?: string }> }
+          | null;
+        const fileError = body?.results?.[0]?.error;
+        if (!res.ok || fileError) {
+          addLog(`失敗: ${file.name}${fileError ? ` (${fileError})` : ""}`);
+        } else {
+          addLog(`取り込み: ${file.name}`);
+        }
       } catch (e) {
         addLog(`エラー: ${(e as Error).message}`);
       } finally {

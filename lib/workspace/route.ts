@@ -8,10 +8,10 @@
  * pick among the shortlist or propose a new folder. Falls back to "hold" when
  * Gemini is unconfigured or the document is a stub.
  */
-import { env, isGeminiConfigured } from "@/lib/env";
 import { embed, generate } from "@/lib/gemini";
 import { cosine } from "@/lib/db/vector";
 import { buildEmbeddingText } from "@/lib/pipeline/embed";
+import type { AiConfig } from "@/lib/ai/config";
 import type { AnalysisResult } from "@/lib/pipeline/types";
 
 /** At or above this confidence the file is auto-moved; below it is held. */
@@ -42,13 +42,17 @@ function stripFences(s: string): string {
 async function shortlist(
   analysis: AnalysisResult,
   categories: string[],
+  ai: AiConfig,
 ): Promise<string[]> {
   if (categories.length <= SHORTLIST_SIZE) return categories;
-  const docVec = await embed(buildEmbeddingText(analysis));
+  const docVec = await embed({
+    apiKey: ai.apiKey,
+    text: buildEmbeddingText(analysis),
+  });
   if (!docVec) return categories.slice(0, SHORTLIST_SIZE);
   const scored: { name: string; score: number }[] = [];
   for (const name of categories) {
-    const vec = await embed(name);
+    const vec = await embed({ apiKey: ai.apiKey, text: name });
     scored.push({ name, score: vec ? cosine(docVec, vec) : 0 });
   }
   return scored
@@ -84,15 +88,17 @@ ${list}
 export async function chooseTargetFolder(
   analysis: AnalysisResult,
   categories: string[],
+  ai: AiConfig,
 ): Promise<FolderChoice> {
-  if (!isGeminiConfigured() || analysis.is_stub) return HOLD;
+  if (!ai.configured || analysis.is_stub) return HOLD;
 
-  const candidates = await shortlist(analysis, categories);
+  const candidates = await shortlist(analysis, categories, ai);
 
   let text: string;
   try {
     text = await generate({
-      model: env.geminiModel,
+      apiKey: ai.apiKey,
+      model: ai.model,
       parts: [{ text: buildPrompt(analysis, candidates) }],
       json: true,
     });

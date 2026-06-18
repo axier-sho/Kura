@@ -18,10 +18,29 @@ export default async function CollectionDetailPage({
   const { id } = await params;
   const { type, from, to } = await searchParams;
 
+  // searchParams are untrusted; only apply date filters that are real calendar
+  // dates. A bare regex would let an impossible date like 2026-02-30 through,
+  // which would silently match nothing instead of being ignored.
+  const isDate = (s?: string): s is string => {
+    const m = typeof s === "string" ? s.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+    if (!m) return false;
+    const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    const dt = new Date(Date.UTC(year, month - 1, day));
+    return (
+      dt.getUTCFullYear() === year &&
+      dt.getUTCMonth() === month - 1 &&
+      dt.getUTCDate() === day
+    );
+  };
+
   const col = collectionsRepo.getById(id);
   if (!col) notFound();
 
-  const docs = documentsRepo.listByCollection(id, { type, from, to });
+  const docs = documentsRepo.listByCollection(id, {
+    type,
+    from: isDate(from) ? from : undefined,
+    to: isDate(to) ? to : undefined,
+  });
   const types = documentsRepo.listDocTypesByCollection(id);
 
   // Group displayed docs by doc_type.

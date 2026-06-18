@@ -1,4 +1,4 @@
-import { env, isGeminiConfigured } from "@/lib/env";
+import type { AiConfig } from "@/lib/ai/config";
 import { generate, type GeminiPart } from "@/lib/gemini";
 import {
   PROMPT_VERSION,
@@ -29,6 +29,25 @@ function toStr(v: unknown): string | null {
   return null;
 }
 
+/**
+ * True only for real YYYY-MM-DD calendar dates. A bare regex accepts impossible
+ * dates (e.g. 2026-02-30), which the Postgres `date` column rejects, failing the
+ * whole events insert; round-tripping through Date catches those.
+ */
+function isRealCalendarDate(s: string): boolean {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
 function normalizeEvents(raw: unknown): ExtractedEvent[] {
   if (!Array.isArray(raw)) return [];
   const out: ExtractedEvent[] = [];
@@ -38,7 +57,7 @@ function normalizeEvents(raw: unknown): ExtractedEvent[] {
     const eventType = toStr(r.event_type);
     if (!eventType) continue;
     let due = toStr(r.due_date);
-    if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) due = null;
+    if (due && !isRealCalendarDate(due)) due = null;
     const lead = Number(r.notify_lead_days);
     out.push({
       event_type: eventType,
@@ -145,8 +164,9 @@ function stubResult(input: IngestInput): AnalysisResult {
 export async function analyze(
   extracted: ExtractedText,
   input: IngestInput,
+  ai: AiConfig,
 ): Promise<AnalysisResult> {
-  if (!isGeminiConfigured()) return stubResult(input);
+  if (!ai.configured) return stubResult(input);
 
   const parts = buildParts(extracted, input);
   if (!parts) {
@@ -156,12 +176,13 @@ export async function analyze(
   let result: AnalysisResult;
   try {
     const text = await generate({
-      model: env.geminiModel,
+      apiKey: ai.apiKey,
+      model: ai.model,
       systemInstruction: SYSTEM_INSTRUCTION,
       parts,
       json: true,
     });
-    result = parseAnalysis(text, env.geminiModel);
+    result = parseAnalysis(text, ai.model);
   } catch (err) {
     console.error("[kura] analyze flash failed:", err);
     return { ...stubResult(input), doc_type: "未分類(解析エラー)" };
@@ -171,17 +192,18 @@ export async function analyze(
   // first pass is not confident.
   if (
     result.confidence < ESCALATION_THRESHOLD &&
-    env.geminiModelEscalation &&
-    env.geminiModelEscalation !== env.geminiModel
+    ai.modelEscalation &&
+    ai.modelEscalation !== ai.model
   ) {
     try {
       const text = await generate({
-        model: env.geminiModelEscalation,
+        apiKey: ai.apiKey,
+        model: ai.modelEscalation,
         systemInstruction: SYSTEM_INSTRUCTION,
         parts,
         json: true,
       });
-      const escalated = parseAnalysis(text, env.geminiModelEscalation);
+      const escalated = parseAnalysis(text, ai.modelEscalation);
       if (escalated.confidence >= result.confidence) result = escalated;
     } catch (err) {
       console.error("[kura] analyze escalation failed:", err);

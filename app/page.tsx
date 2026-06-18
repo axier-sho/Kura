@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { isGeminiConfigured } from "@/lib/env";
+import { isAiConfigured } from "@/lib/ai/config";
 import { PageShell } from "@/components/PageShell";
 import { FolderWatchSettings } from "@/components/desktop/FolderWatchSettings";
 import * as documentsRepo from "@/lib/db/repositories/documents";
@@ -29,10 +29,14 @@ export default async function DashboardPage() {
       description="書類整理の状況と直近の期日。"
     >
       <div className="space-y-8">
-        {!isGeminiConfigured() && (
+        {!isAiConfigured() && (
           <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900">
-            GEMINI_API_KEY が未設定です。取り込みは動作しますが、分類・抽出・意味検索は
-            「未設定」のスタブになります。
+            AI を使うには{" "}
+            <Link href="/settings" className="font-medium underline">
+              設定
+            </Link>{" "}
+            で自分の Gemini API キーを登録してください。未登録の間も取り込みは動作しますが、
+            分類・抽出・意味検索は「未設定」のスタブになります。
           </div>
         )}
 

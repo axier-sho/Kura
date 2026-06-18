@@ -71,14 +71,16 @@ fn start_watch(
         .watch(std::path::Path::new(&path), RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
 
-    *state.0.lock().unwrap() = Some(watcher);
+    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(watcher);
     Ok(())
 }
 
 /// Stop watching (drops the watcher).
 #[tauri::command]
 fn stop_watch(state: State<WatchState>) {
-    *state.0.lock().unwrap() = None;
+    // Poison-tolerant: a panic elsewhere holding this lock must not turn a
+    // simple "stop watching" into a panic with no error channel.
+    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

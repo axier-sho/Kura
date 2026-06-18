@@ -16,19 +16,28 @@ export function SearchBox({
   const [busy, setBusy] = useState(false);
   const [docs, setDocs] = useState<DocumentRow[] | null>(null);
   const [semanticUsed, setSemanticUsed] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setError(null);
     try {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ q, collectionId: collectionId || undefined }),
       });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "検索に失敗しました。");
+      }
       const data = await res.json();
       setDocs((data.documents as DocumentRow[]) ?? []);
       setSemanticUsed(Boolean(data.semanticUsed));
+    } catch (err) {
+      setError((err as Error).message);
+      setDocs(null);
     } finally {
       setBusy(false);
     }
@@ -71,6 +80,8 @@ export function SearchBox({
           ※ Gemini 未設定のため、意味検索は無効です(構造化検索のみ動作します)。
         </p>
       )}
+
+      {error && <p className="text-sm text-kura-danger">{error}</p>}
 
       {docs && (
         <div className="space-y-3">

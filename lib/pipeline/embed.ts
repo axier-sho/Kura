@@ -1,4 +1,5 @@
 import { embed as geminiEmbed } from "@/lib/gemini";
+import type { AiConfig } from "@/lib/ai/config";
 import type { AnalysisResult } from "@/lib/pipeline/types";
 
 /**
@@ -14,9 +15,11 @@ export function buildEmbeddingText(a: AnalysisResult): string {
     .join("\n");
 }
 
-/** Returns an embedding vector, or null when Gemini is not configured. */
+/** Returns an embedding vector, or null when the user has no API key set. */
 export async function embedAnalysis(
   a: AnalysisResult,
+  ai: AiConfig,
 ): Promise<number[] | null> {
-  return geminiEmbed(buildEmbeddingText(a));
+  if (!ai.configured) return null;
+  return geminiEmbed({ apiKey: ai.apiKey, text: buildEmbeddingText(a) });
 }

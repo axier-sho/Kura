@@ -9,6 +9,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { getAiConfig } from "@/lib/ai/config";
 import { runPipeline } from "@/lib/pipeline";
 import type { IngestInput } from "@/lib/pipeline/types";
 import { getWorkingDir } from "@/lib/workspace/settings";
@@ -67,6 +68,9 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
   const listing = listWorkspace(workingDir);
   const results: OrganizeFileResult[] = [];
 
+  // BYOK: resolve the local API key + model choices once for the whole run.
+  const ai = getAiConfig();
+
   // Mutable category list so a folder created mid-run is reusable by later files.
   const categories = [...listing.categories];
   const nameToCollectionId = syncCategoriesToCollections(categories);
@@ -80,8 +84,8 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
         filename,
         mimeType: guessMimeType(filename),
       };
-      const output = await runPipeline(input);
-      const choice = await chooseTargetFolder(output.analysis, categories);
+      const output = await runPipeline(input, ai);
+      const choice = await chooseTargetFolder(output.analysis, categories, ai);
 
       const confident =
         choice.folderName !== null &&

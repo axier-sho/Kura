@@ -66,8 +66,12 @@ cp .env.example .env.local
 
 Edit `.env.local`:
 
-- **Gemini** (optional): `GEMINI_API_KEY` (https://aistudio.google.com/apikey).
-  Works without it (the AI returns clearly-labeled "unset" stubs).
+- **Gemini** (recommended): register your own key in-app under **Settings**
+  (https://aistudio.google.com/apikey); it is stored encrypted on disk. The
+  `.env.local` `GEMINI_API_KEY` is only an optional self-host fallback. Works
+  without any key (the AI returns clearly-labeled "unset" stubs).
+- **Encryption key** (recommended in production): `KURA_ENCRYPTION_KEY` encrypts
+  the stored Gemini key at rest; unset means plaintext (a warning is logged).
 - **Data location** (optional): `KURA_DATA_DIR`. Defaults to the OS per-user
   data directory (e.g. `~/.local/share/kura`, `%APPDATA%\kura`,
   `~/Library/Application Support/kura`).

@@ -174,7 +174,7 @@ export interface ReviewUpdate {
   title: string | null;
   docType: string | null;
   collectionId: string | null;
-  extractedFields: Record<string, string>;
+  extractedFields: Record<string, string | number | null>;
   status: "needs_review" | "confirmed";
 }
 
