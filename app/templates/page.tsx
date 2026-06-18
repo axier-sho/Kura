@@ -1,42 +1,21 @@
-import { getSessionContext } from "@/lib/auth";
-import { isSupabaseConfigured } from "@/lib/env";
 import { PageShell } from "@/components/PageShell";
-import { SetupNotice } from "@/components/SetupNotice";
 import { DraftGenerator } from "@/components/DraftGenerator";
 import { createTemplate } from "./actions";
-import type { DocumentRow, TemplateRow } from "@/lib/db/types";
+import * as templatesRepo from "@/lib/db/repositories/templates";
+import * as documentsRepo from "@/lib/db/repositories/documents";
 
 export const dynamic = "force-dynamic";
 
 export default async function TemplatesPage() {
-  const { supabase, user, orgId } = await getSessionContext();
-
-  let templates: TemplateRow[] = [];
-  let documents: Pick<DocumentRow, "id" | "title" | "original_filename">[] = [];
-  if (supabase && orgId) {
-    const [{ data: t }, { data: d }] = await Promise.all([
-      supabase.from("templates").select("*").order("created_at", { ascending: false }),
-      supabase
-        .from("documents")
-        .select("id, title, original_filename")
-        .eq("status", "confirmed")
-        .order("created_at", { ascending: false })
-        .limit(100),
-    ]);
-    templates = (t as TemplateRow[]) ?? [];
-    documents = d ?? [];
-  }
+  const templates = templatesRepo.listAll();
+  const documents = documentsRepo.listConfirmedForDrafts(100);
 
   return (
     <PageShell
-      email={user?.email}
       title="テンプレート / ドラフト生成"
       description="差し込み欄付きのテンプレートを登録し、抽出済み項目から書類ドラフトを自動生成します。"
     >
-      {!isSupabaseConfigured() ? (
-        <SetupNotice what="テンプレートには Supabase の設定とログインが必要です。" />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-6">
             <form action={createTemplate} className="card space-y-3">
               <h2 className="text-sm font-semibold">新しいテンプレート</h2>
@@ -81,7 +60,6 @@ export default async function TemplatesPage() {
 
           <DraftGenerator templates={templates} documents={documents} />
         </div>
-      )}
     </PageShell>
   );
 }

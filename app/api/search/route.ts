@@ -1,22 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSessionContext } from "@/lib/auth";
 import { isGeminiConfigured } from "@/lib/env";
 import { embed } from "@/lib/gemini";
-import type { DocumentRow } from "@/lib/db/types";
+import * as documents from "@/lib/db/repositories/documents";
 
 export const runtime = "nodejs";
 
 /**
- * Combined search: structured (ILIKE on title/doc_type) + semantic (pgvector
- * via match_documents when Gemini is configured). Returns deduped documents,
+ * Combined search: structured (LIKE on title/doc_type) + semantic (in-JS cosine
+ * over stored embeddings when Gemini is configured). Returns deduped documents,
  * semantic hits first by similarity.
  */
 export async function POST(req: NextRequest) {
-  const { supabase, orgId } = await getSessionContext();
-  if (!supabase || !orgId) {
-    return NextResponse.json({ error: "未認証" }, { status: 401 });
-  }
-
   const body = (await req.json()) as { q?: string; collectionId?: string };
   const q = (body.q ?? "").trim();
   const collectionId = body.collectionId || null;
@@ -25,15 +19,11 @@ export async function POST(req: NextRequest) {
   const ids = new Set<string>();
 
   // --- structured ---
-  let sq = supabase.from("documents").select("id").eq("org_id", orgId);
-  if (collectionId) sq = sq.eq("collection_id", collectionId);
-  if (q) {
-    // Sanitize for the PostgREST `or` filter grammar.
-    const safe = q.replace(/[,()%*]/g, " ").trim();
-    if (safe) sq = sq.or(`title.ilike.%${safe}%,doc_type.ilike.%${safe}%`);
-  }
-  const { data: structured } = await sq.limit(50);
-  structured?.forEach((r) => ids.add(r.id as string));
+  // Strip LIKE wildcards so user input is treated literally.
+  const safe = q.replace(/[%_]/g, " ").trim();
+  documents.searchStructured(safe, collectionId, 50).forEach((id) =>
+    ids.add(id),
+  );
 
   // --- semantic ---
   let semanticUsed = false;
@@ -41,12 +31,7 @@ export async function POST(req: NextRequest) {
     const vec = await embed(q);
     if (vec) {
       semanticUsed = true;
-      const { data: matches } = await supabase.rpc("match_documents", {
-        query_embedding: `[${vec.join(",")}]`,
-        match_count: 20,
-        filter_collection: collectionId,
-      });
-      (matches as { id: string; similarity: number }[] | null)?.forEach((m) => {
+      documents.searchByEmbedding(vec, collectionId, 20).forEach((m) => {
         ids.add(m.id);
         similarity.set(m.id, m.similarity);
       });
@@ -57,17 +42,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ documents: [], semanticUsed });
   }
 
-  const { data: docs } = await supabase
-    .from("documents")
-    .select("*")
-    .in("id", Array.from(ids));
-
-  const documents = ((docs as DocumentRow[]) ?? []).sort((a, b) => {
+  const docs = documents.getByIds(Array.from(ids)).sort((a, b) => {
     const sa = similarity.get(a.id) ?? -1;
     const sb = similarity.get(b.id) ?? -1;
     if (sa !== sb) return sb - sa;
     return b.created_at.localeCompare(a.created_at);
   });
 
-  return NextResponse.json({ documents, semanticUsed });
+  return NextResponse.json({ documents: docs, semanticUsed });
 }

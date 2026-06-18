@@ -5,19 +5,21 @@
 ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
 ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
-![Postgres](https://img.shields.io/badge/postgres-%23316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)
+![SQLite](https://img.shields.io/badge/sqlite-%2307405e.svg?style=for-the-badge&logo=sqlite&logoColor=white)
 ![Google Gemini](https://img.shields.io/badge/google%20gemini-8E75B2?style=for-the-badge&logo=google%20gemini&logoColor=white)
 ![Tauri](https://img.shields.io/badge/tauri-%2324C8DB.svg?style=for-the-badge&logo=tauri&logoColor=%23FFFFFF)
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
-![Vercel](https://img.shields.io/badge/vercel-%23000000.svg?style=for-the-badge&logo=vercel&logoColor=white)
 
 Kura ingests your files, uses AI (Google Gemini) to determine "what kind of
 document this is" and extract the relevant information, organizes them by
 collection, and lets you find them later with **structured search + semantic
 search**. Extracted dates (renewal dates, handover dates, payment due dates,
-etc.) are automatically turned into a calendar with advance notifications, and
-it can also generate document drafts (.docx) from templates.
+etc.) are automatically turned into a calendar, and it can also generate
+document drafts (.docx) from templates.
+
+> **Local-first**: all data (the SQLite database and original files) is stored
+> on your machine — no online database and no accounts. The only time the app
+> goes online is for the **AI feature (Gemini)**.
 
 > Real estate is just one example. Kura is a **general-purpose
 > document-organization tool**: it handles contracts, invoices, receipts,
@@ -32,21 +34,21 @@ it can also generate document drafts (.docx) from templates.
 4. **Resolution/model escalation** Only when confidence is low, retry with a higher-tier model (`gemini-2.5-pro`)
 5. **Human in the loop** Review and correct the AI's proposed organization before confirming; corrections become ground-truth data
 6. **Organize** A "collection → type → file" hierarchy + structured filters
-7. **Search** Structured (type, collection, date) + semantic search via pgvector
-8. **Due-date calendar & notifications** Extracted due dates are automatically turned into a calendar, with advance notifications via cron + email
+7. **Search** Structured (type, collection, date) + semantic search (cosine similarity computed on-device)
+8. **Due-date calendar** Extracted due dates are automatically turned into a calendar, with upcoming dates surfaced on the dashboard
 9. **Draft generation** Generate .docx from templates + extracted fields (a person makes the final call)
-10. **Multi-tenant** Every table has `org_id` + RLS, ready for a future SaaS offering
+10. **Local storage** Saved to SQLite + local files. No server, no account
 
 ## Tech Stack
 
 - **Next.js 16 (App Router) / TypeScript / Tailwind CSS**
-- **Supabase** (Postgres + pgvector + RLS + Auth + Storage)
-- **Google Gemini API** (`@google/genai`) classification, extraction (multimodal), and embeddings
+- **SQLite** (`better-sqlite3`) + local file storage — all data stays on the machine
+- **Google Gemini API** (`@google/genai`) classification, extraction (multimodal), and embeddings (the only online feature)
 - **Tauri 2** (Windows desktop version + automatic folder watching)
-- **docx** (draft generation) / **Resend** (email notifications) / **Vercel Cron** (scheduled notifications)
+- **docx** (draft generation)
 
-> The app builds and runs even without environment variables set. AI/DB
-> features are enabled once you configure the keys.
+> The app builds and runs even without environment variables set. The AI
+> feature is enabled once you set `GEMINI_API_KEY`.
 
 ## Setup
 
@@ -64,21 +66,19 @@ cp .env.example .env.local
 
 Edit `.env.local`:
 
-- **Supabase**: `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` /
-  `SUPABASE_SERVICE_ROLE_KEY` (Settings → API)
-- **Gemini**: `GEMINI_API_KEY` (https://aistudio.google.com/apikey)
-- **Notifications** (optional): `RESEND_API_KEY` / `NOTIFY_FROM_EMAIL`
-- **Cron**: `CRON_SECRET` (any secret string)
+- **Gemini** (optional): `GEMINI_API_KEY` (https://aistudio.google.com/apikey).
+  Works without it (the AI returns clearly-labeled "unset" stubs).
+- **Data location** (optional): `KURA_DATA_DIR`. Defaults to the OS per-user
+  data directory (e.g. `~/.local/share/kura`, `%APPDATA%\kura`,
+  `~/Library/Application Support/kura`).
 
 ### 3. Database
 
-Run `supabase/migrations/0001_init.sql` in your Supabase project's SQL Editor.
-This creates the tables, RLS, pgvector, the semantic-search RPC
-(`match_documents`), the organization bootstrap on sign-up, and the storage
-bucket (`kura-documents`).
+No setup required. On first run, a SQLite database (`kura.db`) and a `files/`
+folder for originals are created automatically under the data directory.
 
-> The embedding dimension defaults to **768** (`GEMINI_EMBEDDING_DIM`). Keep it
-> in sync with `vector(768)` in the SQL. If you change it, update both.
+> The embedding dimension defaults to **768** (`GEMINI_EMBEDDING_DIM`). Semantic
+> search computes cosine similarity on-device (no external vector database).
 
 ### 4. Run (Web)
 
@@ -87,21 +87,7 @@ npm run dev      # development
 npm run build && npm run start   # production
 ```
 
-Open `http://localhost:3000`, sign up → log in → submit files from "Ingest".
-
-## Due-date Notifications (Cron)
-
-The daily notification hits `/api/cron/notify` (`Authorization: Bearer
-<CRON_SECRET>`). On Vercel it runs automatically via the cron configuration in
-`vercel.json` (set `CRON_SECRET` as an environment variable).
-
-Manual test:
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/notify
-```
-
-When `RESEND_API_KEY` is unset, it logs instead of sending.
+Open `http://localhost:3000` and submit files from "Ingest" (no login required).
 
 ## Windows Desktop Version (Tauri)
 
@@ -145,7 +131,7 @@ Input (PDF/PNG/DOCX/TXT)
   → Text extraction (DOCX: mammoth / PDF: unpdf) or Vision (images, scans)
   → Gemini outputs "classification + fields + keywords + due dates + confidence" as JSON in one pass
   → (retry with a higher-tier model if confidence is low)
-  → Embedding generation (pgvector)
+  → Embedding generation (stored in SQLite; cosine similarity computed on-device at search time)
   → Save (content_hash as cache = index) / generate due-date events
   → Human reviews and confirms
   → Search, calendar, draft generation
@@ -164,15 +150,15 @@ app/                 Next.js routes (pages + API)
   api/documents      Ingest API (shared by web/desktop)
   api/search         Structured + semantic search
   api/drafts         .docx draft generation
-  api/cron/notify    Due-date notification cron
-  api/files/[id]     Redirect to the original file's signed URL
+  api/files/[id]     Serve the original file from local storage
 components/          UI components (desktop/ is Tauri-only)
 lib/
   pipeline/          Extraction, classification, embeddings, persistence
-  supabase/          Server/browser/admin clients + auth middleware
+  db/                SQLite connection, schema, repository layer, vector similarity
+  storage/           Local storage of original files
+  paths.ts           Resolves the data directory (OS per-user data dir)
   gemini.ts          Gemini wrapper (disabled when unconfigured)
-  drafts/, notify/   Draft generation, email
-supabase/migrations  Schema + RLS + pgvector + RPC
+  drafts/            Draft generation
 src-tauri/           Windows desktop (Rust + folder watching)
 ```
 

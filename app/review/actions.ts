@@ -1,16 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSessionContext } from "@/lib/auth";
+import * as documentsRepo from "@/lib/db/repositories/documents";
 
 /**
  * Apply a human review to a document. Edits ARE the correction record
  * (spec §2: future training data). `intent=confirm` marks it confirmed.
  */
 export async function reviewDocument(formData: FormData): Promise<void> {
-  const { supabase, orgId } = await getSessionContext();
-  if (!supabase || !orgId) return;
-
   const id = String(formData.get("doc_id") ?? "");
   if (!id) return;
 
@@ -29,17 +26,13 @@ export async function reviewDocument(formData: FormData): Promise<void> {
     }
   }
 
-  await supabase
-    .from("documents")
-    .update({
-      title: title || null,
-      doc_type: docType || null,
-      collection_id: collectionId,
-      extracted_fields: fields,
-      status: intent === "confirm" ? "confirmed" : "needs_review",
-    })
-    .eq("id", id)
-    .eq("org_id", orgId);
+  documentsRepo.updateReview(id, {
+    title: title || null,
+    docType: docType || null,
+    collectionId,
+    extractedFields: fields,
+    status: intent === "confirm" ? "confirmed" : "needs_review",
+  });
 
   revalidatePath("/review");
   revalidatePath("/collections");
