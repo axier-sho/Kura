@@ -178,4 +178,4 @@ src-tauri/           Windows desktop (Rust + folder watching)
 
 ## License
 
-Private.
+Licensed under the [GNU General Public License v3.0](LICENSE).
