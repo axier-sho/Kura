@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSessionContext } from "@/lib/auth";
-import { isSupabaseConfigured } from "@/lib/env";
 import { PageShell } from "@/components/PageShell";
-import { SetupNotice } from "@/components/SetupNotice";
 import { DocumentCard } from "@/components/DocumentCard";
-import type { CollectionRow, DocumentRow } from "@/lib/db/types";
+import * as documentsRepo from "@/lib/db/repositories/documents";
+import * as collectionsRepo from "@/lib/db/repositories/collections";
+import type { DocumentRow } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
 
@@ -18,50 +17,12 @@ export default async function CollectionDetailPage({
 }) {
   const { id } = await params;
   const { type, from, to } = await searchParams;
-  const { supabase, user, orgId } = await getSessionContext();
 
-  if (!isSupabaseConfigured()) {
-    return (
-      <PageShell email={user?.email} title="コレクション">
-        <SetupNotice />
-      </PageShell>
-    );
-  }
-  if (!supabase || !orgId) {
-    return (
-      <PageShell email={user?.email} title="コレクション">
-        <SetupNotice what="ログインが必要です。" />
-      </PageShell>
-    );
-  }
+  const col = collectionsRepo.getById(id);
+  if (!col) notFound();
 
-  const { data: collection } = await supabase
-    .from("collections")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (!collection) notFound();
-  const col = collection as CollectionRow;
-
-  let query = supabase
-    .from("documents")
-    .select("*")
-    .eq("collection_id", id)
-    .order("created_at", { ascending: false });
-  if (type) query = query.eq("doc_type", type);
-  if (from) query = query.gte("created_at", from);
-  if (to) query = query.lte("created_at", `${to}T23:59:59`);
-  const { data } = await query;
-  const docs = (data as DocumentRow[]) ?? [];
-
-  // doc_type list for the filter (from all docs in this collection).
-  const { data: allTypes } = await supabase
-    .from("documents")
-    .select("doc_type")
-    .eq("collection_id", id);
-  const types = Array.from(
-    new Set((allTypes ?? []).map((r) => r.doc_type).filter(Boolean)),
-  ) as string[];
+  const docs = documentsRepo.listByCollection(id, { type, from, to });
+  const types = documentsRepo.listDocTypesByCollection(id);
 
   // Group displayed docs by doc_type.
   const groups = new Map<string, DocumentRow[]>();
@@ -73,7 +34,7 @@ export default async function CollectionDetailPage({
   }
 
   return (
-    <PageShell email={user?.email} title={col.name} description={col.description ?? undefined}>
+    <PageShell title={col.name} description={col.description ?? undefined}>
       <div className="mb-4">
         <Link href="/collections" className="text-sm text-kura-accent hover:underline">
           ← コレクション一覧

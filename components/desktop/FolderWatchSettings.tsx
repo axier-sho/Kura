@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * Desktop-only panel (Tauri). Lets the user pick a local folder; the Rust shell
  * watches it and emits "kura://file-detected" on new/changed files. Here we read
  * each file via the `read_file` command and POST it to the same /api/documents
- * ingest endpoint (the webview shares the app's auth session).
+ * ingest endpoint (which persists to the local database).
  *
  * Renders nothing on the web (window.__TAURI__ is absent).
  */

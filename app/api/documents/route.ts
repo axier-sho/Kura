@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSessionContext } from "@/lib/auth";
 import { runPipeline } from "@/lib/pipeline";
 import { persistDocument } from "@/lib/pipeline/persist";
 
@@ -9,18 +8,10 @@ export const maxDuration = 60;
 
 /**
  * Ingest one or more files: run the pipeline (extract → classify+extract →
- * embed) and persist. Used by both the web upload UI and the Tauri desktop
- * folder-watcher (which POSTs watched files here with the user's session).
+ * embed) and persist locally. Used by both the web upload UI and the Tauri
+ * desktop folder-watcher (which POSTs watched files here).
  */
 export async function POST(req: NextRequest) {
-  const { supabase, orgId } = await getSessionContext();
-  if (!supabase || !orgId) {
-    return NextResponse.json(
-      { error: "未認証です(Supabase の設定とログインが必要です)。" },
-      { status: 401 },
-    );
-  }
-
   const form = await req.formData();
   const collectionId = (form.get("collection_id") as string) || null;
   const files = form
@@ -44,8 +35,6 @@ export async function POST(req: NextRequest) {
     try {
       const output = await runPipeline(input);
       const { documentId, cached } = await persistDocument(
-        supabase,
-        orgId,
         input,
         output,
         collectionId,

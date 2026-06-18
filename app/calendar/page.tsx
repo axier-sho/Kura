@@ -1,14 +1,9 @@
 import Link from "next/link";
-import { getSessionContext } from "@/lib/auth";
-import { isSupabaseConfigured } from "@/lib/env";
 import { PageShell } from "@/components/PageShell";
-import { SetupNotice } from "@/components/SetupNotice";
 import { updateEventStatus } from "./actions";
-import type { EventRow } from "@/lib/db/types";
+import * as eventsRepo from "@/lib/db/repositories/events";
 
 export const dynamic = "force-dynamic";
-
-type EventWithDoc = EventRow & { documents: { title: string | null } | null };
 
 function daysUntil(date: string): number {
   const today = new Date(new Date().toISOString().slice(0, 10)).getTime();
@@ -16,27 +11,14 @@ function daysUntil(date: string): number {
 }
 
 export default async function CalendarPage() {
-  const { supabase, user, orgId } = await getSessionContext();
-
-  let events: EventWithDoc[] = [];
-  if (supabase && orgId) {
-    const { data } = await supabase
-      .from("events")
-      .select("*, documents(title)")
-      .eq("status", "open")
-      .order("due_date", { ascending: true, nullsFirst: false });
-    events = (data as EventWithDoc[]) ?? [];
-  }
+  const events = eventsRepo.listOpenWithDoc();
 
   return (
     <PageShell
-      email={user?.email}
       title="カレンダー"
       description="書類から抽出した期日(更新・引き渡し・解約予告・支払など)。種別ごとのリードタイムで通知されます。"
     >
-      {!isSupabaseConfigured() ? (
-        <SetupNotice what="カレンダーには Supabase の設定とログインが必要です。" />
-      ) : events.length === 0 ? (
+      {events.length === 0 ? (
         <div className="card text-sm text-gray-500">
           期日はありません。書類を取り込むと、抽出された期日がここに表示されます。
         </div>

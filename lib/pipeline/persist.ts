@@ -1,7 +1,8 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { env } from "@/lib/env";
 import { sha256 } from "@/lib/hash";
 import { PROMPT_VERSION } from "@/lib/pipeline/prompts";
+import * as documents from "@/lib/db/repositories/documents";
+import * as events from "@/lib/db/repositories/events";
+import { saveFile } from "@/lib/storage/local";
 import type { PipelineOutput } from "@/lib/pipeline";
 import type { IngestInput } from "@/lib/pipeline/types";
 
@@ -10,19 +11,12 @@ export interface PersistResult {
   cached: boolean;
 }
 
-/** Format a JS number[] for a pgvector column (text input form: "[1,2,3]"). */
-function toVectorLiteral(v: number[] | null): string | null {
-  return v ? `[${v.join(",")}]` : null;
-}
-
 /**
- * Persist a pipeline result: upload original to Storage, upsert the document
- * row keyed by content hash (cache = index, spec §3), and insert due-date
- * events. Returns the existing row untouched on a cache hit.
+ * Persist a pipeline result: save the original to local storage, insert the
+ * document row keyed by content hash (cache = index, spec §3), and insert
+ * due-date events. Returns the existing row untouched on a cache hit.
  */
 export async function persistDocument(
-  supabase: SupabaseClient,
-  orgId: string,
   input: IngestInput,
   output: PipelineOutput,
   collectionId: string | null,
@@ -30,89 +24,43 @@ export async function persistDocument(
   const hash = sha256(input.bytes);
 
   // Cache check: same content + same prompt version → reuse (no re-scan).
-  const { data: existing } = await supabase
-    .from("documents")
-    .select("id")
-    .eq("org_id", orgId)
-    .eq("content_hash", hash)
-    .eq("prompt_version", PROMPT_VERSION)
-    .maybeSingle();
+  const existing = documents.findCached(hash, PROMPT_VERSION);
+  if (existing) return { documentId: existing.id, cached: true };
 
-  if (existing?.id) return { documentId: existing.id, cached: true };
-
-  // Upload original file (path prefixed by org for the storage RLS policy).
-  const storagePath = `${orgId}/${hash}-${input.filename}`;
-  const { error: uploadError } = await supabase.storage
-    .from(env.storageBucket)
-    .upload(storagePath, Buffer.from(input.bytes), {
-      contentType: input.mimeType,
-      upsert: true,
-    });
-  if (uploadError) {
-    throw new Error(
-      `ファイルのアップロードに失敗しました: ${uploadError.message}`,
-    );
-  }
+  // Save the original file locally; the returned path is the storage_path.
+  const storagePath = saveFile(hash, input.filename, input.bytes);
 
   const { analysis, embedding } = output;
 
-  const { data: doc, error } = await supabase
-    .from("documents")
-    .insert({
-      org_id: orgId,
-      collection_id: collectionId,
-      content_hash: hash,
-      doc_type: analysis.doc_type,
-      title: analysis.title,
-      extracted_fields: analysis.fields,
-      keywords: analysis.keywords,
-      embedding: toVectorLiteral(embedding),
-      confidence: analysis.confidence,
-      model: analysis.model,
-      prompt_version: analysis.prompt_version,
-      status: "needs_review",
-      storage_path: storagePath,
-      original_filename: input.filename,
-      mime_type: input.mimeType,
-      is_stub: analysis.is_stub,
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    // A concurrent ingest of the same content can race past the cache check
-    // above and hit the unique(org_id, content_hash, prompt_version) constraint.
-    // Treat that as a cache hit by returning the row the other request created.
-    if (error.code === "23505") {
-      const { data: raced } = await supabase
-        .from("documents")
-        .select("id")
-        .eq("org_id", orgId)
-        .eq("content_hash", hash)
-        .eq("prompt_version", PROMPT_VERSION)
-        .maybeSingle();
-      if (raced?.id) return { documentId: raced.id, cached: true };
-    }
-    throw new Error(`書類の保存に失敗しました: ${error.message}`);
-  }
-  if (!doc) {
-    throw new Error("書類の保存に失敗しました: unknown");
-  }
+  const documentId = documents.insertDocument({
+    collectionId,
+    contentHash: hash,
+    docType: analysis.doc_type,
+    title: analysis.title,
+    extractedFields: analysis.fields,
+    keywords: analysis.keywords,
+    embedding,
+    confidence: analysis.confidence,
+    model: analysis.model,
+    promptVersion: analysis.prompt_version,
+    storagePath,
+    originalFilename: input.filename,
+    mimeType: input.mimeType,
+    isStub: analysis.is_stub,
+  });
 
   if (analysis.events.length > 0) {
-    await supabase.from("events").insert(
+    events.insertMany(
       analysis.events.map((e) => ({
-        org_id: orgId,
-        document_id: doc.id,
-        collection_id: collectionId,
-        event_type: e.event_type,
-        due_date: e.due_date,
-        notify_lead_days: e.notify_lead_days,
-        action_needed: e.action_needed,
-        status: "open" as const,
+        documentId,
+        collectionId,
+        eventType: e.event_type,
+        dueDate: e.due_date,
+        notifyLeadDays: e.notify_lead_days,
+        actionNeeded: e.action_needed,
       })),
     );
   }
 
-  return { documentId: doc.id, cached: false };
+  return { documentId, cached: false };
 }
