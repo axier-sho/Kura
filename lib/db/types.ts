@@ -1,8 +1,7 @@
-/** Row types mirroring the SQL schema (the subset the UI reads). */
+/** Row types mirroring the local SQLite schema (the subset the UI reads). */
 
 export interface CollectionRow {
   id: string;
-  org_id: string;
   name: string;
   description: string | null;
   created_at: string;
@@ -10,13 +9,13 @@ export interface CollectionRow {
 
 export interface DocumentRow {
   id: string;
-  org_id: string;
   collection_id: string | null;
   content_hash: string;
   doc_type: string | null;
   title: string | null;
   extracted_fields: Record<string, string | number | null>;
   keywords: string[];
+  embedding: number[] | null;
   confidence: number | null;
   model: string | null;
   prompt_version: string | null;
@@ -31,7 +30,6 @@ export interface DocumentRow {
 
 export interface EventRow {
   id: string;
-  org_id: string;
   document_id: string | null;
   collection_id: string | null;
   event_type: string;
@@ -46,7 +44,6 @@ export interface EventRow {
 
 export interface TemplateRow {
   id: string;
-  org_id: string;
   name: string;
   doc_type: string | null;
   body: string;

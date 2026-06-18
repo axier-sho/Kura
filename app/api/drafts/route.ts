@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { getSessionContext } from "@/lib/auth";
 import { buildDocx, fillTemplate } from "@/lib/drafts/docx";
-import type { DocumentRow, TemplateRow } from "@/lib/db/types";
+import * as documents from "@/lib/db/repositories/documents";
+import * as templates from "@/lib/db/repositories/templates";
 
 export const runtime = "nodejs";
 
@@ -11,11 +11,6 @@ export const runtime = "nodejs";
  * finalizes it, then re-uploads (re-entering the pipeline, closing the loop).
  */
 export async function POST(req: NextRequest) {
-  const { supabase, orgId } = await getSessionContext();
-  if (!supabase || !orgId) {
-    return NextResponse.json({ error: "未認証" }, { status: 401 });
-  }
-
   const { templateId, documentId } = (await req.json()) as {
     templateId?: string;
     documentId?: string;
@@ -27,27 +22,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const [{ data: tpl }, { data: doc }] = await Promise.all([
-    supabase
-      .from("templates")
-      .select("*")
-      .eq("id", templateId)
-      .eq("org_id", orgId)
-      .maybeSingle(),
-    supabase
-      .from("documents")
-      .select("*")
-      .eq("id", documentId)
-      .eq("org_id", orgId)
-      .maybeSingle(),
-  ]);
+  const template = templates.getById(templateId);
+  const document = documents.getById(documentId);
 
-  if (!tpl || !doc) {
+  if (!template || !document) {
     return NextResponse.json({ error: "見つかりません。" }, { status: 404 });
   }
-
-  const template = tpl as TemplateRow;
-  const document = doc as DocumentRow;
 
   const filled = fillTemplate(template.body, document.extracted_fields ?? {});
   const buffer = await buildDocx(template.name, filled);

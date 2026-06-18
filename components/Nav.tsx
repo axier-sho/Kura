@@ -10,7 +10,7 @@ const links = [
   { href: "/templates", label: "テンプレート" },
 ];
 
-export function Nav({ email }: { email?: string | null }) {
+export function Nav() {
   return (
     <header className="border-b border-gray-200 bg-white">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
@@ -28,18 +28,6 @@ export function Nav({ email }: { email?: string | null }) {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-3 text-xs text-gray-500">
-          {email ? (
-            <>
-              <span className="hidden sm:inline">{email}</span>
-              <form action="/auth/signout" method="post">
-                <button className="text-gray-600 hover:text-kura-danger" type="submit">
-                  ログアウト
-                </button>
-              </form>
-            </>
-          ) : null}
-        </div>
       </div>
     </header>
   );
