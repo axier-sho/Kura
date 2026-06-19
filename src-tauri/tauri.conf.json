@@ -6,29 +6,41 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "npm run tauri:prepare",
     "frontendDist": "./dist"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Kura 書類整理AI",
         "width": 1200,
-        "height": 820,
-        "url": "http://localhost:3000"
+        "height": 820
       }
     ],
     "security": {
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/axier-sho/Kura/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY3NDc2MjI1NjM5NzRDRDEKUldUUlRKZGpKV0pIWjNFQmFRNnFOS0hwT2llTGpzSVk5S2Q3NUh0ODV4VDdhd1h3WDRZWVV6cmYK"
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis", "msi"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": ["binaries/node"],
+    "resources": ["resources/app-server"]
   }
 }
