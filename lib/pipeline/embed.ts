@@ -21,5 +21,14 @@ export async function embedAnalysis(
   ai: AiConfig,
 ): Promise<number[] | null> {
   if (!ai.configured) return null;
-  return geminiEmbed({ apiKey: ai.apiKey, text: buildEmbeddingText(a) });
+  // Embeddings are optional everywhere downstream (PipelineOutput.embedding is
+  // number[] | null and persist stores null fine). A transient Gemini failure
+  // (429/timeout/expired key) must NOT abort ingestion of an already-analyzed
+  // document — degrade to null, mirroring analyze()'s own error handling.
+  try {
+    return await geminiEmbed({ apiKey: ai.apiKey, text: buildEmbeddingText(a) });
+  } catch (err) {
+    console.error("[kura] embedAnalysis failed (degrading to null):", err);
+    return null;
+  }
 }

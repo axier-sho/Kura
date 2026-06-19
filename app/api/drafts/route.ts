@@ -11,10 +11,19 @@ export const runtime = "nodejs";
  * finalizes it, then re-uploads (re-entering the pipeline, closing the loop).
  */
 export async function POST(req: NextRequest) {
-  const { templateId, documentId } = (await req.json()) as {
-    templateId?: string;
-    documentId?: string;
-  };
+  let templateId: string | undefined;
+  let documentId: string | undefined;
+  try {
+    ({ templateId, documentId } = (await req.json()) as {
+      templateId?: string;
+      documentId?: string;
+    });
+  } catch {
+    return NextResponse.json(
+      { error: "不正なリクエストです。" },
+      { status: 400 },
+    );
+  }
   if (!templateId || !documentId) {
     return NextResponse.json(
       { error: "テンプレートと書類を選択してください。" },

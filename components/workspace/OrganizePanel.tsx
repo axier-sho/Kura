@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 interface OrganizeFileResult {
@@ -50,6 +50,15 @@ export function OrganizePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<OrganizeRunResult | null>(null);
+  const [isTauri, setIsTauri] = useState(false);
+
+  useEffect(() => {
+    // window.__TAURI__ is absent during SSR; detect after mount so the first
+    // client render matches the server (isTauri=false) and avoids a hydration
+    // mismatch in the desktop build.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsTauri(getTauri() !== null);
+  }, []);
 
   async function refresh() {
     const res = await fetch("/api/organize");
@@ -105,7 +114,6 @@ export function OrganizePanel({
     }
   }
 
-  const isTauri = getTauri() !== null;
   const moved = run?.results.filter((r) => r.action === "moved") ?? [];
   const held = run?.results.filter((r) => r.action === "held") ?? [];
   const errors = run?.results.filter((r) => r.action === "error") ?? [];

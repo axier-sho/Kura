@@ -16,7 +16,10 @@ use std::time::Duration;
 #[cfg(not(debug_assertions))]
 use tauri::RunEvent;
 #[cfg(not(debug_assertions))]
-use tauri_plugin_shell::{process::CommandChild, ShellExt};
+use tauri_plugin_shell::{
+    process::{CommandChild, CommandEvent},
+    ShellExt,
+};
 
 /// Holds the active folder watcher so it stays alive across command calls.
 struct WatchState(Mutex<Option<RecommendedWatcher>>);
@@ -46,6 +49,18 @@ fn pick_folder(app: tauri::AppHandle) -> Option<String> {
 /// File and POSTs it to /api/documents).
 #[tauri::command]
 fn read_file(path: String) -> Result<FileData, String> {
+    // Cap the size: the whole file is read into memory, base64-encoded (~33%
+    // inflation), then copied again as JSON over IPC, so a multi-GB input could
+    // exhaust memory and abort the process. Return an error instead of slurping.
+    const MAX_BYTES: u64 = 64 * 1024 * 1024; // 64 MB
+    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+    if meta.len() > MAX_BYTES {
+        return Err(format!(
+            "ファイルが大きすぎます ({} バイト, 上限 {} バイト)",
+            meta.len(),
+            MAX_BYTES
+        ));
+    }
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
     let name = PathBuf::from(&path)
         .file_name()
@@ -179,8 +194,19 @@ fn start_server(app: &tauri::App) {
     }
 
     // Drain the server's stdout/stderr so its OS pipe buffer never fills and
-    // blocks the Node process during a long session.
-    tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
+    // blocks the Node process during a long session. Log the lines (instead of
+    // silently discarding) so a sidecar boot failure — e.g. a better-sqlite3
+    // NODE_MODULE_VERSION mismatch — leaves a diagnostic trail.
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) | CommandEvent::Stderr(line) => {
+                    eprintln!("[kura sidecar] {}", String::from_utf8_lossy(&line));
+                }
+                _ => {}
+            }
+        }
+    });
 
     // Wait for readiness off the main thread, then navigate the window.
     std::thread::spawn(move || {
@@ -194,7 +220,17 @@ fn start_server(app: &tauri::App) {
                 }
             }
         } else {
+            // The sidecar never started listening (boot crash, ABI mismatch,
+            // port stolen, …). Without this the window sits on the loading
+            // spinner forever with no user-visible explanation.
             eprintln!("[kura] server did not come up on port {port}");
+            handle
+                .dialog()
+                .message(
+                    "内部サーバーの起動に失敗しました。アプリを再起動してください。問題が続く場合は再インストールをお試しください。",
+                )
+                .title("Kura 起動エラー")
+                .blocking_show();
         }
     });
 }

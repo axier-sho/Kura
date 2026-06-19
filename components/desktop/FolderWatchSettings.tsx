@@ -111,24 +111,39 @@ export function FolderWatchSettings() {
   async function pick() {
     const tauri = getTauri();
     if (!tauri) return;
-    const path = await tauri.core.invoke<string | null>("pick_folder");
-    if (path) setFolder(path);
+    try {
+      const path = await tauri.core.invoke<string | null>("pick_folder");
+      if (path) setFolder(path);
+    } catch (e) {
+      addLog(`エラー: ${(e as Error).message}`);
+    }
   }
 
   async function start() {
     const tauri = getTauri();
     if (!tauri || !folder) return;
-    await tauri.core.invoke("start_watch", { path: folder });
-    setWatching(true);
-    addLog(`監視開始: ${folder}`);
+    try {
+      await tauri.core.invoke("start_watch", { path: folder });
+      setWatching(true);
+      addLog(`監視開始: ${folder}`);
+    } catch (e) {
+      // A rejected invoke (folder removed, no read permission) must surface to
+      // the user, not become an unhandled rejection that silently leaves the UI
+      // showing the wrong watch state.
+      addLog(`エラー: ${(e as Error).message}`);
+    }
   }
 
   async function stop() {
     const tauri = getTauri();
     if (!tauri) return;
-    await tauri.core.invoke("stop_watch");
-    setWatching(false);
-    addLog("監視停止");
+    try {
+      await tauri.core.invoke("stop_watch");
+      setWatching(false);
+      addLog("監視停止");
+    } catch (e) {
+      addLog(`エラー: ${(e as Error).message}`);
+    }
   }
 
   return (

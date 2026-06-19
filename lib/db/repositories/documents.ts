@@ -24,12 +24,27 @@ type RawDoc = {
   updated_at: string;
 };
 
+/** Tolerant JSON parse for TEXT columns: a corrupt/truncated value (e.g. an
+ *  externally-edited DB or a partial write) degrades to `fallback` instead of
+ *  throwing and crashing every read of every document. */
+function safeParse<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 function mapDoc(r: RawDoc): DocumentRow {
   return {
     ...r,
-    extracted_fields: JSON.parse(r.extracted_fields || "{}"),
-    keywords: JSON.parse(r.keywords || "[]"),
-    embedding: r.embedding ? (JSON.parse(r.embedding) as number[]) : null,
+    extracted_fields: safeParse(
+      r.extracted_fields,
+      {} as Record<string, string | number | null>,
+    ),
+    keywords: safeParse(r.keywords, [] as string[]),
+    embedding: safeParse(r.embedding, null as number[] | null),
     is_stub: r.is_stub === 1,
   };
 }
@@ -265,10 +280,19 @@ export function searchByEmbedding(
     embedding: string;
   }[];
   return rows
-    .map((r) => ({
-      id: r.id,
-      similarity: cosine(vec, JSON.parse(r.embedding) as number[]),
-    }))
+    .flatMap((r) => {
+      // Skip rows whose embedding is corrupt or has a stale dimension (e.g. the
+      // embedding model/dim changed): a single bad row must not abort the whole
+      // search, and a mismatched dimension would otherwise score as garbage.
+      let parsed: number[];
+      try {
+        parsed = JSON.parse(r.embedding) as number[];
+      } catch {
+        return [];
+      }
+      if (!Array.isArray(parsed) || parsed.length !== vec.length) return [];
+      return [{ id: r.id, similarity: cosine(vec, parsed) }];
+    })
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, limit);
 }

@@ -41,8 +41,16 @@ export function UploadDropzone({
       if (collectionId) fd.set("collection_id", collectionId);
       files.forEach((f) => fd.append("files", f));
       const res = await fetch("/api/documents", { method: "POST", body: fd });
+      if (!res.ok) {
+        // An error response (413 from a proxy, HTML 5xx, …) may not be JSON;
+        // guard the parse so the user sees the upload-failure message, not a
+        // raw SyntaxError.
+        const data = await res.json().catch(() => ({}));
+        throw new Error(
+          (data as { error?: string }).error ?? "アップロードに失敗しました",
+        );
+      }
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "アップロードに失敗しました");
       setResults(data.results as UploadResult[]);
       setFiles([]);
     } catch (e) {
