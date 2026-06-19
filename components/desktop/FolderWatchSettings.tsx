@@ -26,6 +26,19 @@ function getTauri(): TauriGlobal | null {
   return (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
 }
 
+/** Tauri rejects invokes with a plain string (or other non-Error value); read a
+ *  human-readable message without assuming an `Error` shape (which would render
+ *  as "undefined"). */
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -83,7 +96,7 @@ export function FolderWatchSettings() {
           addLog(`取り込み: ${file.name}`);
         }
       } catch (e) {
-        addLog(`エラー: ${(e as Error).message}`);
+        addLog(`エラー: ${errorMessage(e)}`);
       } finally {
         seen.current.delete(path);
       }
@@ -115,7 +128,7 @@ export function FolderWatchSettings() {
       const path = await tauri.core.invoke<string | null>("pick_folder");
       if (path) setFolder(path);
     } catch (e) {
-      addLog(`エラー: ${(e as Error).message}`);
+      addLog(`エラー: ${errorMessage(e)}`);
     }
   }
 
@@ -130,7 +143,7 @@ export function FolderWatchSettings() {
       // A rejected invoke (folder removed, no read permission) must surface to
       // the user, not become an unhandled rejection that silently leaves the UI
       // showing the wrong watch state.
-      addLog(`エラー: ${(e as Error).message}`);
+      addLog(`エラー: ${errorMessage(e)}`);
     }
   }
 
@@ -142,7 +155,7 @@ export function FolderWatchSettings() {
       setWatching(false);
       addLog("監視停止");
     } catch (e) {
-      addLog(`エラー: ${(e as Error).message}`);
+      addLog(`エラー: ${errorMessage(e)}`);
     }
   }
 
