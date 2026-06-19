@@ -18,8 +18,17 @@
 //
 // Run from the project root: `node src-tauri/scripts/bundle-server.mjs`
 
-import { existsSync, rmSync, mkdirSync, cpSync } from "node:fs";
-import { join, dirname } from "node:path";
+import {
+  existsSync,
+  rmSync,
+  mkdirSync,
+  cpSync,
+  readdirSync,
+  lstatSync,
+  readlinkSync,
+  statSync,
+} from "node:fs";
+import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -80,6 +89,69 @@ if (existsSync(bsqSrc) && !existsSync(bsqDest)) {
   mkdirSync(dirname(bsqDest), { recursive: true });
   cpSync(bsqSrc, bsqDest, { recursive: true });
   console.log("[bundle-server] copied better-sqlite3 native build/");
+}
+
+// 4) CRITICAL: materialize Turbopack's external-package symlinks.
+// A Turbopack production build resolves every `serverExternalPackages` entry
+// (better-sqlite3, mammoth, unpdf) through a SYMLINK it creates at
+// `.next/node_modules/<pkg>-<hash>` pointing at the real package. The server chunks
+// then `require("<pkg>-<hash>")`, which resolves ONLY via that symlink. Symlinks do
+// not survive this copy + the Windows MSI packaging — they become absolute/dangling
+// or are dropped — so the installed app throws `Cannot find module '<pkg>-<hash>'`
+// on the first DB/parse call and every page 500s ("Internal Server Error").
+// Replace each symlink with a real copy of the package so resolution never depends
+// on a symlink. The real package is taken from our own traced node_modules rather
+// than the link target (cpSync above has already rewritten it to an absolute
+// build-machine path that won't exist on the user's machine).
+const extDir = join(dest, ".next", "node_modules");
+let materialized = 0;
+if (existsSync(extDir)) {
+  for (const name of readdirSync(extDir)) {
+    const linkPath = join(extDir, name);
+    if (!lstatSync(linkPath).isSymbolicLink()) continue;
+    // Real package name = Turbopack's "<pkg>-<hex hash>" minus the hash; fall back
+    // to the link target's basename if stripping doesn't resolve.
+    let realName = name.replace(/-[0-9a-f]{8,}$/, "");
+    if (!existsSync(join(dest, "node_modules", realName))) {
+      realName = basename(readlinkSync(linkPath));
+    }
+    const realPkg = join(dest, "node_modules", realName);
+    if (!existsSync(realPkg)) {
+      fail(
+        `external "${name}" -> "${realName}" is missing from the bundled ` +
+          "node_modules; cannot materialize. Did the trace drop it?",
+      );
+    }
+    rmSync(linkPath, { recursive: true, force: true });
+    cpSync(realPkg, linkPath, { recursive: true });
+    console.log(`[bundle-server] materialized external ${name} <- node_modules/${realName}`);
+    materialized++;
+  }
+}
+console.log(`[bundle-server] materialized ${materialized} external package(s)`);
+
+// 5) Guard against a contaminated/bloated bundle. v0.1.0 shipped a 449 MB installer
+// because a dirty workspace swept build artifacts (static libs, object files) into
+// the bundle. A clean standalone bundle is tens of MB; fail loudly well before that.
+const MAX_MB = 300;
+let bytes = 0;
+const stack = [dest];
+while (stack.length) {
+  const dir = stack.pop();
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isSymbolicLink()) continue;
+    const p = join(dir, e.name);
+    if (e.isDirectory()) stack.push(p);
+    else if (e.isFile()) bytes += statSync(p).size;
+  }
+}
+const sizeMb = Math.round(bytes / 1048576);
+console.log(`[bundle-server] bundle size: ${sizeMb} MB`);
+if (sizeMb > MAX_MB) {
+  fail(
+    `bundle is ${sizeMb} MB (cap ${MAX_MB} MB). A dirty workspace likely pulled in ` +
+      "build artifacts. Build from a clean checkout with a fresh `npm ci`.",
+  );
 }
 
 console.log("[bundle-server] done.");
