@@ -1,6 +1,6 @@
 {
   "name": "kura",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Kura 書類整理AI: a general-purpose document-organization app (ingest, classify, extract, organize, search, due-date calendar, draft generation).",
   "scripts": {
