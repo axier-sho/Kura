@@ -36,11 +36,24 @@ struct FileData {
 }
 
 /// Open a native folder picker, returning the chosen path (or None).
+///
+/// This is `async` on purpose: sync commands run on the main thread, and
+/// `blocking_pick_folder()` would then block the very event loop the native
+/// dialog needs to run, deadlocking (and surfacing in the webview as a rejected
+/// invoke). Instead we drive the dialog through the non-blocking callback API —
+/// which always marshals onto the main loop — and await the result on this
+/// worker thread via a channel.
 #[tauri::command]
-fn pick_folder(app: tauri::AppHandle) -> Option<String> {
-    app.dialog()
-        .file()
-        .blocking_pick_folder()
+async fn pick_folder(app: tauri::AppHandle) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog().file().pick_folder(move |folder| {
+        // Send may fail only if the receiver was dropped (command aborted);
+        // ignore — there is nothing left to return the path to.
+        let _ = tx.send(folder);
+    });
+    rx.recv()
+        .ok()
+        .flatten()
         .and_then(|p| p.into_path().ok())
         .map(|p| p.to_string_lossy().to_string())
 }

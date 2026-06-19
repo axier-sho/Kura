@@ -34,6 +34,18 @@ function getTauri(): TauriGlobal | null {
   return (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__ ?? null;
 }
 
+/** Tauri rejects invokes with a plain string (or other non-Error value); read a
+ *  human-readable message without assuming an `Error` shape. */
+function errorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return String(e);
+  }
+}
+
 export function OrganizePanel({
   initialWorkingDir,
   initialInboxCount,
@@ -73,8 +85,15 @@ export function OrganizePanel({
   async function pickFolder() {
     const tauri = getTauri();
     if (!tauri) return;
-    const path = await tauri.core.invoke<string | null>("pick_folder");
-    if (path) setWorkingDir(path);
+    setError(null);
+    try {
+      const path = await tauri.core.invoke<string | null>("pick_folder");
+      if (path) setWorkingDir(path);
+    } catch (e) {
+      // Tauri rejects invokes with a plain string, not an Error, so reading
+      // `.message` would show "undefined". Surface the real message instead.
+      setError(`フォルダの選択に失敗しました: ${errorMessage(e)}`);
+    }
   }
 
   async function saveDir() {
