@@ -92,10 +92,13 @@ export async function chooseTargetFolder(
 ): Promise<FolderChoice> {
   if (!ai.configured || analysis.is_stub) return HOLD;
 
-  const candidates = await shortlist(analysis, categories, ai);
-
+  let candidates: string[];
   let text: string;
   try {
+    // shortlist() makes its own embed() calls; keep them inside the try so a
+    // transient embed failure HOLDs the file (for review) instead of bubbling
+    // up to runOrganize as a hard "error".
+    candidates = await shortlist(analysis, categories, ai);
     text = await generate({
       apiKey: ai.apiKey,
       model: ai.model,

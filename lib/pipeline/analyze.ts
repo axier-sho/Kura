@@ -85,7 +85,13 @@ function normalizeFields(raw: unknown): Record<string, string | number | null> {
 function parseAnalysis(text: string, model: string): AnalysisResult {
   let parsed: Record<string, unknown> = {};
   try {
-    parsed = JSON.parse(stripFences(text)) as Record<string, unknown>;
+    // JSON.parse("null") / a JSON array succeed but aren't usable objects;
+    // coerce anything that isn't a plain object to {} so the defaults below
+    // apply instead of throwing on `parsed.confidence`.
+    const raw = JSON.parse(stripFences(text)) as unknown;
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      parsed = raw as Record<string, unknown>;
+    }
   } catch {
     parsed = {};
   }

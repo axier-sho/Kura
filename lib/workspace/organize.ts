@@ -13,7 +13,12 @@ import { getAiConfig } from "@/lib/ai/config";
 import { runPipeline } from "@/lib/pipeline";
 import type { IngestInput } from "@/lib/pipeline/types";
 import { getWorkingDir } from "@/lib/workspace/settings";
-import { listWorkspace, moveFile, createCategoryFolder } from "@/lib/workspace/fs";
+import {
+  listWorkspace,
+  moveFile,
+  createCategoryFolder,
+  sanitizeFolderName,
+} from "@/lib/workspace/fs";
 import {
   syncCategoriesToCollections,
   ensureCollectionForFolder,
@@ -92,18 +97,29 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
         choice.confidence >= AUTO_MOVE_THRESHOLD;
 
       if (confident && choice.folderName) {
-        let collectionId: string | null;
-        if (choice.isNew) {
-          createCategoryFolder(workingDir, choice.folderName);
-          collectionId = ensureCollectionForFolder(choice.folderName);
-          if (!categories.includes(choice.folderName)) {
-            categories.push(choice.folderName);
-            nameToCollectionId.set(choice.folderName, collectionId);
+        // Resolve the destination once so the on-disk folder, the collection
+        // row, and the recorded name always agree. An existing category is used
+        // verbatim (it is a real directory). A new folder — or one Gemini
+        // claimed exists but doesn't (is_new=false with an unknown name) — is
+        // sanitized and materialized, since its name is untrusted model output.
+        // Using the raw name for the move while creating a sanitized folder
+        // would land the file in a different (possibly nested) directory than
+        // the one recorded in the collection.
+        let collectionId = nameToCollectionId.get(choice.folderName) ?? null;
+        let destName = choice.folderName;
+        if (collectionId === null) {
+          destName = sanitizeFolderName(choice.folderName);
+          collectionId = nameToCollectionId.get(destName) ?? null;
+          if (collectionId === null) {
+            createCategoryFolder(workingDir, destName);
+            collectionId = ensureCollectionForFolder(destName);
           }
-        } else {
-          collectionId = nameToCollectionId.get(choice.folderName) ?? null;
+          if (!categories.includes(destName)) {
+            categories.push(destName);
+            nameToCollectionId.set(destName, collectionId);
+          }
         }
-        const destDir = path.join(workingDir, choice.folderName);
+        const destDir = path.join(workingDir, destName);
         const newPath = moveFile(workingDir, srcPath, destDir, filename);
         const { documentId } = persistOrganized({
           input,
@@ -115,7 +131,7 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
         results.push({
           filename,
           action: "moved",
-          folder: choice.folderName,
+          folder: destName,
           isNew: choice.isNew,
           documentId,
           confidence: choice.confidence,

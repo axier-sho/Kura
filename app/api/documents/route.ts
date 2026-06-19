@@ -13,8 +13,21 @@ export const maxDuration = 60;
  * desktop folder-watcher (which POSTs watched files here).
  */
 export async function POST(req: NextRequest) {
-  const form = await req.formData();
-  const collectionId = (form.get("collection_id") as string) || null;
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    // Non-multipart / malformed body: same clean 400 as "no files".
+    return NextResponse.json(
+      { error: "ファイルが含まれていません。" },
+      { status: 400 },
+    );
+  }
+  const rawCollectionId = form.get("collection_id");
+  const collectionId =
+    typeof rawCollectionId === "string" && rawCollectionId
+      ? rawCollectionId
+      : null;
   const files = form
     .getAll("files")
     .filter((f): f is File => f instanceof File);

@@ -6,7 +6,14 @@
 
 /** Cosine similarity in [-1, 1]; 0 when either vector is empty/degenerate. */
 export function cosine(a: number[], b: number[]): number {
-  const len = Math.min(a.length, b.length);
+  // Fail loud on a dimension mismatch rather than silently truncating to the
+  // shorter vector (which would corrupt ranking after an embedding-model/dim
+  // change). Callers in the search path pre-filter by dimension; same-call
+  // pairs (shortlist) are always equal-dimension.
+  if (a.length !== b.length) {
+    throw new Error(`cosine: dimension mismatch (${a.length} vs ${b.length})`);
+  }
+  const len = a.length;
   let dot = 0;
   let na = 0;
   let nb = 0;

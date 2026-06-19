@@ -20,7 +20,7 @@ export interface WorkspaceListing {
  * Strip path separators and OS-illegal characters from a folder name. Spaces
  * and hyphens are preserved; control characters are removed by code point.
  */
-function sanitizeFolderName(name: string): string {
+export function sanitizeFolderName(name: string): string {
   const cleaned = Array.from(name.replace(/[\\/]/g, " "))
     .filter((ch) => {
       const code = ch.charCodeAt(0);
