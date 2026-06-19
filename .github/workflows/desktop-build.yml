@@ -27,7 +27,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # MUST match the bundled runtime sidecar (Node 20, see fetch-node-sidecar.mjs).
+          # better-sqlite3 is native: building under a different Node major ships a
+          # binary whose ABI the sidecar can't load -> "Internal Server Error" at runtime.
+          node-version: 20
           cache: npm
 
       - name: Install Rust
