@@ -7,8 +7,24 @@ use serde::Serialize;
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+#[cfg(not(debug_assertions))]
+use tauri::path::BaseDirectory;
+#[cfg(not(debug_assertions))]
+use std::net::{SocketAddr, TcpListener, TcpStream};
+#[cfg(not(debug_assertions))]
+use std::time::Duration;
+#[cfg(not(debug_assertions))]
+use tauri::RunEvent;
+#[cfg(not(debug_assertions))]
+use tauri_plugin_shell::{process::CommandChild, ShellExt};
+
 /// Holds the active folder watcher so it stays alive across command calls.
 struct WatchState(Mutex<Option<RecommendedWatcher>>);
+
+/// Holds the bundled Next.js server process so we can kill it on exit instead of
+/// leaking an orphaned `node` (and the port it holds) after the window closes.
+#[cfg(not(debug_assertions))]
+struct ServerProcess(Mutex<Option<CommandChild>>);
 
 #[derive(Serialize)]
 struct FileData {
@@ -83,17 +99,184 @@ fn stop_watch(state: State<WatchState>) {
     *state.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
+/// Ask the OS for a free TCP port by binding to :0 and reading back the
+/// assignment. There is a tiny race between dropping the listener here and the
+/// Node server claiming it, but it is effectively never hit on a desktop and is
+/// far safer than hardcoding 3000 (the classic "connection denied" cause).
+#[cfg(not(debug_assertions))]
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+        .unwrap_or(34117)
+}
+
+/// Block until something is listening on the port (the server has booted), or
+/// give up after ~30s. Returns whether the server came up.
+#[cfg(not(debug_assertions))]
+fn wait_for_server(port: u16) -> bool {
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    for _ in 0..300 {
+        if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+/// Launch the bundled Next.js standalone server as a hidden `node` sidecar and,
+/// once it is listening, point the main window at it. Production only — in dev,
+/// `beforeDevCommand` already runs `next dev` and the window uses `devUrl`.
+#[cfg(not(debug_assertions))]
+fn start_server(app: &tauri::App) {
+    let handle = app.handle().clone();
+
+    // resources/app-server (server.js + traced node_modules + .next + public),
+    // bundled via tauri.conf.json `resources`. resolve() keeps the relative path
+    // the bundler used, so we don't have to guess the on-disk layout.
+    let server_dir = match app
+        .path()
+        .resolve("resources/app-server", BaseDirectory::Resource)
+    {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("[kura] cannot resolve bundled server: {e}");
+            return;
+        }
+    };
+    let server_js = server_dir.join("server.js");
+    let port = free_port();
+
+    let sidecar = match app.shell().sidecar("node") {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            eprintln!("[kura] node sidecar missing: {e}");
+            return;
+        }
+    };
+
+    let spawned = sidecar
+        .current_dir(server_dir.clone())
+        .env("PORT", port.to_string())
+        // Bind loopback only — the server is for this app, not the LAN.
+        .env("HOSTNAME", "127.0.0.1")
+        .env("NODE_ENV", "production")
+        .args([server_js.to_string_lossy().to_string()])
+        .spawn();
+
+    let (mut rx, child) = match spawned {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("[kura] failed to start server: {e}");
+            return;
+        }
+    };
+
+    // Keep the child so we can kill it on exit (see RunEvent::Exit below).
+    if let Some(state) = handle.try_state::<ServerProcess>() {
+        *state.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+    }
+
+    // Drain the server's stdout/stderr so its OS pipe buffer never fills and
+    // blocks the Node process during a long session.
+    tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
+
+    // Wait for readiness off the main thread, then navigate the window.
+    std::thread::spawn(move || {
+        if wait_for_server(port) {
+            if let Some(win) = handle.get_webview_window("main") {
+                match format!("http://127.0.0.1:{port}").parse() {
+                    Ok(url) => {
+                        let _ = win.navigate(url);
+                    }
+                    Err(e) => eprintln!("[kura] bad server url: {e}"),
+                }
+            }
+        } else {
+            eprintln!("[kura] server did not come up on port {port}");
+        }
+    });
+}
+
+/// On launch (release only) check GitHub Releases for a newer signed build. If one
+/// exists, ask the user; on accept, download + install it and relaunch. Runs in the
+/// background so it never blocks startup. Compiled out in debug (no signed artifacts).
+#[cfg(not(debug_assertions))]
+fn check_for_updates(handle: tauri::AppHandle) {
+    use tauri_plugin_dialog::MessageDialogButtons;
+    use tauri_plugin_updater::UpdaterExt;
+
+    tauri::async_runtime::spawn(async move {
+        let updater = match handle.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("[kura] updater unavailable: {e}");
+                return;
+            }
+        };
+
+        match updater.check().await {
+            Ok(Some(update)) => {
+                let accepted = handle
+                    .dialog()
+                    .message(format!(
+                        "新しいバージョン {} が利用可能です。今すぐ更新しますか?",
+                        update.version
+                    ))
+                    .title("Kura のアップデート")
+                    .buttons(MessageDialogButtons::OkCancel)
+                    .blocking_show();
+
+                if accepted {
+                    match update.download_and_install(|_, _| {}, || {}).await {
+                        Ok(_) => handle.restart(),
+                        Err(e) => eprintln!("[kura] update install failed: {e}"),
+                    }
+                }
+            }
+            Ok(None) => {} // already up to date
+            Err(e) => eprintln!("[kura] update check failed: {e}"),
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(WatchState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             pick_folder,
             read_file,
             start_watch,
             stop_watch
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running Kura");
+        ]);
+
+    #[cfg(not(debug_assertions))]
+    let builder = builder
+        .manage(ServerProcess(Mutex::new(None)))
+        .setup(|app| {
+            start_server(app);
+            check_for_updates(app.handle().clone());
+            Ok(())
+        });
+
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building Kura");
+
+    app.run(|_app_handle, _event| {
+        // Reap the bundled server on shutdown so it doesn't outlive the window.
+        #[cfg(not(debug_assertions))]
+        if let RunEvent::Exit = _event {
+            if let Some(state) = _app_handle.try_state::<ServerProcess>() {
+                if let Some(child) = state.0.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    let _ = child.kill();
+                }
+            }
+        }
+    });
 }

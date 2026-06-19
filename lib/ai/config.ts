@@ -21,12 +21,20 @@ export const SETTINGS_KEYS = {
   modelEscalation: "gemini_model_escalation",
 } as const;
 
-/** Curated Gemini models offered in the settings dropdown; the form also accepts a custom id. */
+/**
+ * Curated Gemini models offered in the settings dropdown; the form also accepts
+ * a custom id. Ordered newest/most-capable first. Kept current as of 2026-06:
+ * gemini-2.0-flash was shut down (2026-06-01) and is dropped; the gemini-2.5
+ * family is GA but scheduled for shutdown on 2026-10-16, so prefer gemini-3.x.
+ */
 export const GEMINI_MODELS = [
-  "gemini-2.5-flash",
+  "gemini-3.5-flash",
+  "gemini-3.1-pro-preview",
+  "gemini-3.1-flash-lite",
+  "gemini-3-flash-preview",
   "gemini-2.5-pro",
+  "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
-  "gemini-2.0-flash",
 ] as const;
 
 /** Resolved, ready-to-use AI config for a single request. */
