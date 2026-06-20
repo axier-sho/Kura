@@ -5,6 +5,7 @@ import { DocumentCard } from "@/components/DocumentCard";
 import * as documentsRepo from "@/lib/db/repositories/documents";
 import * as collectionsRepo from "@/lib/db/repositories/collections";
 import type { DocumentRow } from "@/lib/db/types";
+import { renameCollection, deleteCollection } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,50 @@ export default async function CollectionDetailPage({
           ← コレクション一覧
         </Link>
       </div>
+
+      <details className="card mb-6">
+        <summary className="cursor-pointer text-sm font-semibold text-gray-700">
+          コレクションを編集
+        </summary>
+        <div className="mt-4 space-y-6">
+          <form action={renameCollection} className="space-y-3">
+            <input type="hidden" name="id" value={col.id} />
+            <div>
+              <label className="label">名前</label>
+              <input
+                name="name"
+                required
+                defaultValue={col.name}
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="label">説明(任意)</label>
+              <input
+                name="description"
+                defaultValue={col.description ?? ""}
+                className="input"
+              />
+            </div>
+            <button type="submit" className="btn-primary">
+              変更を保存
+            </button>
+          </form>
+
+          <form
+            action={deleteCollection}
+            className="flex items-center justify-between border-t border-gray-100 pt-4"
+          >
+            <input type="hidden" name="id" value={col.id} />
+            <p className="text-xs text-gray-500">
+              削除しても書類は消えません。書類は「未分類」に戻ります。
+            </p>
+            <button type="submit" className="btn-ghost text-sm text-kura-danger">
+              コレクションを削除
+            </button>
+          </form>
+        </div>
+      </details>
 
       <form className="card mb-6 flex flex-wrap items-end gap-3" method="get">
         <div>

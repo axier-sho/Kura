@@ -6,7 +6,13 @@ import * as eventsRepo from "@/lib/db/repositories/events";
 export const dynamic = "force-dynamic";
 
 function daysUntil(date: string): number {
-  const today = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  // Calendar-day delta. "today" must be the LOCAL date: deriving it from
+  // toISOString() uses the UTC date, which for JST users between 00:00–09:00 is
+  // still yesterday, skewing the count (and the overdue/warning styling) by one.
+  // Date.UTC(local Y/M/D) and a "YYYY-MM-DD" string both parse to UTC midnight,
+  // so the subtraction is a pure day difference.
+  const n = new Date();
+  const today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
   return Math.round((new Date(date).getTime() - today) / 86_400_000);
 }
 
@@ -16,7 +22,7 @@ export default async function CalendarPage() {
   return (
     <PageShell
       title="カレンダー"
-      description="書類から抽出した期日(更新・引き渡し・解約予告・支払など)。種別ごとのリードタイムで通知されます。"
+      description="書類から抽出した期日(更新・引き渡し・解約予告・支払など)。期日が近づくと、ダッシュボードとこの画面で強調表示されます。"
     >
       {events.length === 0 ? (
         <div className="card text-sm text-gray-500">
@@ -54,10 +60,9 @@ export default async function CalendarPage() {
                   )}
                   <div className="mt-1 text-xs text-gray-400">
                     {e.documents?.title ?? "書類"}
-                    {" ・通知 "}
+                    {" ・"}
                     {e.notify_lead_days}
-                    日前
-                    {e.notified_at ? " ・通知済み" : ""}
+                    日前から強調表示
                   </div>
                 </div>
                 <div className="flex gap-2">

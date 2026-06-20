@@ -82,15 +82,30 @@ export function isAiConfigured(): boolean {
 
 /**
  * What the settings form needs to render. Never returns the key itself — only
- * whether one is stored (so the form can show 設定済み).
+ * whether a *usable* one is stored. `hasKey` reflects decryptability, not mere
+ * row existence: a stored key that no longer decrypts (e.g. KURA_ENCRYPTION_KEY
+ * changed, or the local enc.key was lost) reports hasKey=false + keyError=true,
+ * so the form warns instead of showing a misleading 設定済み.
  */
 export function getAiSettingsView(): {
   hasKey: boolean;
+  keyError: boolean;
   model: string;
   modelEscalation: string;
 } {
+  const stored = settingsRepo.get(SETTINGS_KEYS.apiKey);
+  let hasKey = false;
+  let keyError = false;
+  if (stored) {
+    try {
+      hasKey = Boolean(decryptSecret(stored));
+    } catch {
+      keyError = true;
+    }
+  }
   return {
-    hasKey: Boolean(settingsRepo.get(SETTINGS_KEYS.apiKey)),
+    hasKey,
+    keyError,
     model: settingsRepo.get(SETTINGS_KEYS.model) ?? env.geminiModel,
     modelEscalation:
       settingsRepo.get(SETTINGS_KEYS.modelEscalation) ??

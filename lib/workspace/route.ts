@@ -50,11 +50,20 @@ async function shortlist(
     text: buildEmbeddingText(analysis),
   });
   if (!docVec) return categories.slice(0, SHORTLIST_SIZE);
-  const scored: { name: string; score: number }[] = [];
-  for (const name of categories) {
-    const vec = await embed({ apiKey: ai.apiKey, text: name });
-    scored.push({ name, score: vec ? cosine(docVec, vec) : 0 });
-  }
+  // Embed folder names concurrently. Serial await-in-loop multiplies latency by
+  // the folder count and, with many folders, can blow the route's 60s
+  // maxDuration cap mid-run. A single folder's embed failure scores 0 rather
+  // than aborting the whole shortlist.
+  const scored = await Promise.all(
+    categories.map(async (name) => {
+      try {
+        const vec = await embed({ apiKey: ai.apiKey, text: name });
+        return { name, score: vec ? cosine(docVec, vec) : 0 };
+      } catch {
+        return { name, score: 0 };
+      }
+    }),
+  );
   return scored
     .sort((a, b) => b.score - a.score)
     .slice(0, SHORTLIST_SIZE)

@@ -11,6 +11,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { getAiConfig } from "@/lib/ai/config";
 import { runPipeline } from "@/lib/pipeline";
+import { sha256 } from "@/lib/hash";
+import { PROMPT_VERSION } from "@/lib/pipeline/prompts";
+import * as documents from "@/lib/db/repositories/documents";
 import type { IngestInput } from "@/lib/pipeline/types";
 import { getWorkingDir } from "@/lib/workspace/settings";
 import {
@@ -84,6 +87,17 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
     const filename = path.basename(srcPath);
     try {
       const bytes = new Uint8Array(fs.readFileSync(srcPath));
+
+      // Skip files the user already confirmed in /review: a confirmed file can
+      // still physically sit in _inbox, so without this guard every organize run
+      // would re-bill Gemini AND overwrite the confirmed status/location. A held
+      // (needs_review) cached doc is still re-processed, so configuring the key
+      // and re-running can upgrade an earlier stub.
+      const cached = documents.findCached(sha256(bytes), PROMPT_VERSION);
+      if (cached && documents.getById(cached.id)?.status === "confirmed") {
+        continue;
+      }
+
       const input: IngestInput = {
         bytes,
         filename,
@@ -121,13 +135,27 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
         }
         const destDir = path.join(workingDir, destName);
         const newPath = moveFile(workingDir, srcPath, destDir, filename);
-        const { documentId } = persistOrganized({
-          input,
-          output,
-          collectionId,
-          storagePath: newPath,
-          status: "confirmed",
-        });
+        let documentId: string;
+        try {
+          ({ documentId } = persistOrganized({
+            input,
+            output,
+            collectionId,
+            storagePath: newPath,
+            status: "confirmed",
+          }));
+        } catch (persistErr) {
+          // The file already left the inbox. If the DB write fails, move it back
+          // so it stays in the inbox (tracked by the next run) instead of being
+          // orphaned in a category folder with no document row pointing at it.
+          try {
+            fs.renameSync(newPath, srcPath);
+          } catch {
+            // Best-effort rollback only (e.g. cross-device): leave the moved
+            // file in place and let the original error surface.
+          }
+          throw persistErr;
+        }
         results.push({
           filename,
           action: "moved",

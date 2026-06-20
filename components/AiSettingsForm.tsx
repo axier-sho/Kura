@@ -14,6 +14,56 @@ function SaveButton() {
 }
 
 /**
+ * Validate the saved key against Gemini and report the result inline, so a
+ * wrong/revoked key surfaces here instead of silently turning every ingest into
+ * a "解析エラー" stub. Tests the *stored* key (paste → 保存 → 接続テスト).
+ */
+function TestConnectionButton() {
+  const [state, setState] = useState<{
+    status: "idle" | "testing" | "ok" | "error";
+    message?: string;
+  }>({ status: "idle" });
+
+  async function test() {
+    setState({ status: "testing" });
+    try {
+      const res = await fetch("/api/ai/test", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (data.ok) setState({ status: "ok" });
+      else
+        setState({
+          status: "error",
+          message: data.error ?? "接続に失敗しました。",
+        });
+    } catch (e) {
+      setState({ status: "error", message: (e as Error).message });
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <button
+        type="button"
+        onClick={test}
+        disabled={state.status === "testing"}
+        className="btn-ghost text-sm"
+      >
+        {state.status === "testing" ? "テスト中…" : "接続テスト"}
+      </button>
+      {state.status === "ok" && (
+        <span className="text-xs text-kura-accent">接続に成功しました。</span>
+      )}
+      {state.status === "error" && (
+        <span className="text-xs text-kura-danger">{state.message}</span>
+      )}
+    </div>
+  );
+}
+
+/**
  * A model picker that submits its value via a hidden input named `field`, so a
  * curated <select> and a free-text "custom" input can share one submitted value.
  */
@@ -74,16 +124,24 @@ function ModelField({
 export function AiSettingsForm({
   models,
   hasKey,
+  keyError,
   model,
   modelEscalation,
 }: {
   models: string[];
   hasKey: boolean;
+  keyError: boolean;
   model: string;
   modelEscalation: string;
 }) {
   return (
     <div className="space-y-6">
+      {keyError && (
+        <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900">
+          保存済みの API キーを復号できませんでした(KURA_ENCRYPTION_KEY
+          または暗号鍵ファイルが変わった可能性があります)。キーを再入力して保存してください。
+        </div>
+      )}
       <form action={updateAiSettings} className="card space-y-5">
         <div>
           <label className="label">Gemini API キー(自分のキーを使用)</label>
@@ -118,7 +176,10 @@ export function AiSettingsForm({
           />
         </div>
 
-        <SaveButton />
+        <div className="flex flex-wrap items-center gap-3">
+          <SaveButton />
+          {hasKey && <TestConnectionButton />}
+        </div>
       </form>
 
       {hasKey ? (

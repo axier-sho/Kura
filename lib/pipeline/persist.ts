@@ -1,4 +1,5 @@
 import { sha256 } from "@/lib/hash";
+import { transaction } from "@/lib/db/sqlite";
 import { PROMPT_VERSION } from "@/lib/pipeline/prompts";
 import * as documents from "@/lib/db/repositories/documents";
 import * as events from "@/lib/db/repositories/events";
@@ -32,35 +33,43 @@ export async function persistDocument(
 
   const { analysis, embedding } = output;
 
-  const documentId = documents.insertDocument({
-    collectionId,
-    contentHash: hash,
-    docType: analysis.doc_type,
-    title: analysis.title,
-    extractedFields: analysis.fields,
-    keywords: analysis.keywords,
-    embedding,
-    confidence: analysis.confidence,
-    model: analysis.model,
-    promptVersion: analysis.prompt_version,
-    storagePath,
-    originalFilename: input.filename,
-    mimeType: input.mimeType,
-    isStub: analysis.is_stub,
-  });
+  // Insert the document and its due-date events atomically: if the events
+  // insert fails, the document row must roll back too. Otherwise the document
+  // commits, the caller reports the file as failed, and the user's retry hits
+  // the content-hash cache (findCached) and skips the events block forever —
+  // silently and permanently dropping the reminders this app exists to surface.
+  const documentId = transaction(() => {
+    const id = documents.insertDocument({
+      collectionId,
+      contentHash: hash,
+      docType: analysis.doc_type,
+      title: analysis.title,
+      extractedFields: analysis.fields,
+      keywords: analysis.keywords,
+      embedding,
+      confidence: analysis.confidence,
+      model: analysis.model,
+      promptVersion: analysis.prompt_version,
+      storagePath,
+      originalFilename: input.filename,
+      mimeType: input.mimeType,
+      isStub: analysis.is_stub,
+    });
 
-  if (analysis.events.length > 0) {
-    events.insertMany(
-      analysis.events.map((e) => ({
-        documentId,
-        collectionId,
-        eventType: e.event_type,
-        dueDate: e.due_date,
-        notifyLeadDays: e.notify_lead_days,
-        actionNeeded: e.action_needed,
-      })),
-    );
-  }
+    if (analysis.events.length > 0) {
+      events.insertMany(
+        analysis.events.map((e) => ({
+          documentId: id,
+          collectionId,
+          eventType: e.event_type,
+          dueDate: e.due_date,
+          notifyLeadDays: e.notify_lead_days,
+          actionNeeded: e.action_needed,
+        })),
+      );
+    }
+    return id;
+  });
 
   return { documentId, cached: false };
 }

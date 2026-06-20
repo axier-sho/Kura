@@ -7,32 +7,34 @@ import * as collectionsRepo from "@/lib/db/repositories/collections";
 
 /**
  * Ensure a collection row exists for every category folder. Returns a map from
- * folder name to collection id for all given categories. Matching is
- * case-insensitive on name.
+ * folder name to collection id for all given categories.
+ *
+ * Matching is by EXACT folder name (one collection per real folder). Lowercasing
+ * would collapse case-only-distinct sibling folders — e.g. `Tax` and `tax`, which
+ * are separate directories on case-sensitive volumes — onto a single collection,
+ * merging documents the on-disk layout means to keep apart.
  */
 export function syncCategoriesToCollections(
   categories: string[],
 ): Map<string, string> {
   const existing = collectionsRepo.listAll();
-  const byLowerName = new Map(existing.map((c) => [c.name.toLowerCase(), c]));
+  const byName = new Map(existing.map((c) => [c.name, c]));
   const result = new Map<string, string>();
   for (const name of categories) {
-    const found = byLowerName.get(name.toLowerCase());
+    const found = byName.get(name);
     if (found) {
       result.set(name, found.id);
     } else {
       const id = collectionsRepo.insert(name, null);
-      byLowerName.set(name.toLowerCase(), { id, name, description: null, created_at: "" });
+      byName.set(name, { id, name, description: null, created_at: "" });
       result.set(name, id);
     }
   }
   return result;
 }
 
-/** Find or create a single collection by folder name; returns its id. */
+/** Find or create a single collection by exact folder name; returns its id. */
 export function ensureCollectionForFolder(name: string): string {
-  const existing = collectionsRepo
-    .listAll()
-    .find((c) => c.name.toLowerCase() === name.toLowerCase());
+  const existing = collectionsRepo.listAll().find((c) => c.name === name);
   return existing ? existing.id : collectionsRepo.insert(name, null);
 }

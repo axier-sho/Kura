@@ -104,9 +104,13 @@ function parseAnalysis(text: string, model: string): AnalysisResult {
       ? (parsed.keywords as unknown[]).map(toStr).filter((s): s is string => !!s)
       : [],
     events: normalizeEvents(parsed.events),
+    // A missing/garbled confidence must not look like genuine low confidence, or
+    // every such response would fire a second (pro-tier) escalation call for no
+    // benefit. Default to the escalation threshold so it does NOT escalate; a low
+    // value the model actually returned still does.
     confidence: Number.isFinite(confidence)
       ? Math.min(1, Math.max(0, confidence))
-      : 0.5,
+      : ESCALATION_THRESHOLD,
     model,
     prompt_version: PROMPT_VERSION,
     is_stub: false,
