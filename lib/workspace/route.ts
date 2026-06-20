@@ -70,10 +70,17 @@ async function shortlist(
     .map((s) => s.name);
 }
 
-function buildPrompt(analysis: AnalysisResult, candidates: string[]): string {
+function buildPrompt(
+  analysis: AnalysisResult,
+  candidates: string[],
+  instruction: string,
+): string {
   const list = candidates.length
     ? candidates.map((c) => `- ${c}`).join("\n")
     : "(既存フォルダなし)";
+  const rules = instruction.trim()
+    ? `\nユーザーからの整理ルール(最優先で従うこと):\n${instruction.trim()}\n`
+    : "";
   return `書類を整理します。下記の書類を、既存フォルダのいずれかに振り分けてください。
 
 書類:
@@ -83,8 +90,9 @@ function buildPrompt(analysis: AnalysisResult, candidates: string[]): string {
 
 既存フォルダ:
 ${list}
-
+${rules}
 判断ルール:
+- ユーザーからの整理ルールがある場合は、それを最優先で守る。
 - まず既存フォルダの中から最も適切なものを選ぶ。
 - どれにも明確に合わない場合のみ、適切な新しいフォルダ名を提案する(is_new=true)。
 - 判断できない場合は folder を null にする。
@@ -98,6 +106,7 @@ export async function chooseTargetFolder(
   analysis: AnalysisResult,
   categories: string[],
   ai: AiConfig,
+  instruction = "",
 ): Promise<FolderChoice> {
   if (!ai.configured || analysis.is_stub) return HOLD;
 
@@ -111,7 +120,7 @@ export async function chooseTargetFolder(
     text = await generate({
       apiKey: ai.apiKey,
       model: ai.model,
-      parts: [{ text: buildPrompt(analysis, candidates) }],
+      parts: [{ text: buildPrompt(analysis, candidates, instruction) }],
       json: true,
     });
   } catch (err) {

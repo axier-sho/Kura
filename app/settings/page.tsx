@@ -18,6 +18,8 @@ export default function SettingsPage() {
         keyError={view.keyError}
         model={view.model}
         modelEscalation={view.modelEscalation}
+        occupation={view.occupation}
+        customInstruction={view.customInstruction}
       />
     </PageShell>
   );

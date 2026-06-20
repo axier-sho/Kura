@@ -11,6 +11,14 @@ function normalizeModel(raw: FormDataEntryValue | null): string | null {
   return s || null;
 }
 
+/** Trim + cap a free-text field; empty → null. Caps prompt bloat / token cost. */
+function normalizeText(raw: FormDataEntryValue | null, max: number): string | null {
+  const s = String(raw ?? "")
+    .trim()
+    .slice(0, max);
+  return s || null;
+}
+
 /**
  * Save the AI settings. The API key is (re)written only when a non-empty value
  * is submitted — leaving the field blank keeps the existing stored key (the
@@ -22,6 +30,14 @@ export async function updateAiSettings(formData: FormData): Promise<void> {
   settingsRepo.set(
     SETTINGS_KEYS.modelEscalation,
     normalizeModel(formData.get("model_escalation")),
+  );
+  settingsRepo.set(
+    SETTINGS_KEYS.occupation,
+    normalizeText(formData.get("occupation"), 200),
+  );
+  settingsRepo.set(
+    SETTINGS_KEYS.customInstruction,
+    normalizeText(formData.get("custom_instruction"), 2000),
   );
 
   const apiKey = String(formData.get("api_key") ?? "").trim();

@@ -15,11 +15,26 @@ interface OrganizeFileResult {
 }
 
 interface OrganizeRunResult {
+  runId: string | null;
   processed: number;
   moved: number;
   held: number;
   errors: number;
   results: OrganizeFileResult[];
+}
+
+/** A past organize run, as shown in the history list. Mirrors the server row
+ *  minus the move-log (the client only needs the summary + instruction text). */
+interface OrganizeRunSummary {
+  id: string;
+  created_at: string;
+  instruction: string | null;
+  feedback: string | null;
+  processed: number;
+  moved: number;
+  held: number;
+  errors: number;
+  undone: boolean;
 }
 
 /** Streaming progress events from POST /api/organize (NDJSON, one per line).
@@ -68,10 +83,14 @@ export function OrganizePanel({
   initialWorkingDir,
   initialInboxCount,
   initialCategories,
+  initialHistory,
+  initialUndoableRunId,
 }: {
   initialWorkingDir: string | null;
   initialInboxCount: number;
   initialCategories: string[];
+  initialHistory: OrganizeRunSummary[];
+  initialUndoableRunId: string | null;
 }) {
   const [workingDir, setWorkingDir] = useState(initialWorkingDir ?? "");
   const [savedDir, setSavedDir] = useState(initialWorkingDir);
@@ -81,6 +100,14 @@ export function OrganizePanel({
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<OrganizeRunResult | null>(null);
   const [isTauri, setIsTauri] = useState(false);
+  // 整理開始前の指示。毎回リセット(空欄起動)で、履歴に記録される。
+  const [instruction, setInstruction] = useState("");
+  // 結果が悪かったときの改善点。指示に追記して整理し直す。
+  const [feedback, setFeedback] = useState("");
+  const [history, setHistory] = useState<OrganizeRunSummary[]>(initialHistory);
+  const [undoableRunId, setUndoableRunId] = useState<string | null>(
+    initialUndoableRunId,
+  );
   const { logs, push: pushLog, clear: clearLogs } = useConsoleLog();
 
   useEffect(() => {
@@ -98,6 +125,8 @@ export function OrganizePanel({
     if (data.workingDir) {
       setInboxCount(data.inboxCount ?? 0);
       setCategories(data.categories ?? []);
+      setHistory(data.history ?? []);
+      setUndoableRunId(data.undoableRunId ?? null);
     }
   }
 
@@ -188,13 +217,20 @@ export function OrganizePanel({
     }
   }
 
-  async function organize() {
+  async function organize(overrideInstruction?: string, fb?: string) {
     setBusy(true);
     setError(null);
     setRun(null);
     clearLogs();
     try {
-      const res = await fetch("/api/organize", { method: "POST" });
+      const res = await fetch("/api/organize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instruction: overrideInstruction ?? instruction,
+          feedback: fb,
+        }),
+      });
       if (!res.ok || !res.body) {
         // Setup errors (e.g. no working dir) come back as JSON, not a stream.
         let msg = "整理に失敗しました";
@@ -214,6 +250,65 @@ export function OrganizePanel({
       setBusy(false);
       await refresh();
     }
+  }
+
+  /** Undo a previous run's auto-moves (back to the inbox). Returns true on ok. */
+  async function undoRun(runId: string): Promise<boolean> {
+    const res = await fetch("/api/organize/undo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ runId }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      restored?: number;
+      skipped?: number;
+      errors?: string[];
+      error?: string;
+    };
+    if (!res.ok) throw new Error(data.error ?? "元に戻すのに失敗しました");
+    pushLog(
+      "info",
+      `元に戻しました(受信箱へ ${data.restored ?? 0} 件 / スキップ ${data.skipped ?? 0} 件)`,
+    );
+    (data.errors ?? []).forEach((m) => pushLog("error", `元に戻す: ${m}`));
+    return true;
+  }
+
+  /** Standalone "元に戻す": revert the latest undoable run, no re-run. */
+  async function undoLast() {
+    if (!undoableRunId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await undoRun(undoableRunId);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+      await refresh();
+    }
+  }
+
+  /** Append the feedback to the instruction, undo the last run, and re-organize
+   *  so the moved-back files are re-routed under the corrected instruction. */
+  async function applyFeedbackAndRerun() {
+    const add = feedback.trim();
+    if (!add) return;
+    const merged = instruction.trim() ? `${instruction.trim()}\n${add}` : add;
+    setBusy(true);
+    setError(null);
+    try {
+      if (undoableRunId) await undoRun(undoableRunId);
+    } catch (e) {
+      // Surface but continue: the re-run still applies the improved instruction
+      // to whatever remains in the inbox.
+      pushLog("error", `元に戻す: ${errorMessage(e)}`);
+    } finally {
+      setBusy(false);
+    }
+    setInstruction(merged);
+    setFeedback("");
+    await organize(merged, add);
   }
 
   const moved = run?.results.filter((r) => r.action === "moved") ?? [];
@@ -274,8 +369,25 @@ export function OrganizePanel({
                   </span>
                 ))}
           </div>
+          <div>
+            <label className="label" htmlFor="organize-instruction">
+              整理の指示(任意)
+            </label>
+            <textarea
+              id="organize-instruction"
+              className="input min-h-[72px] w-full"
+              placeholder="例: 請求書は取引先名でフォルダ分けして。領収書はまとめて『経費』に。"
+              value={instruction}
+              onChange={(e) => setInstruction(e.target.value)}
+              maxLength={2000}
+              disabled={busy}
+            />
+            <p className="text-xs text-gray-400">
+              AI がフォルダを決めるとき、この指示を最優先で守ります。設定の職業・カスタム指示も併せて適用されます。入力内容は履歴に残ります。
+            </p>
+          </div>
           <button
-            onClick={organize}
+            onClick={() => organize()}
             disabled={busy || inboxCount === 0}
             className="btn-primary w-full"
           >
@@ -362,10 +474,82 @@ export function OrganizePanel({
                     </ul>
                   </div>
                 )}
+
+                <div className="space-y-2 border-t pt-3">
+                  <label className="label" htmlFor="organize-feedback">
+                    整理結果の改善点(AI へのフィードバック)
+                  </label>
+                  <textarea
+                    id="organize-feedback"
+                    className="input min-h-[60px] w-full"
+                    placeholder="例: 領収書は『経費』にまとめて。請求書は取引先ごとに分けて。"
+                    value={feedback}
+                    onChange={(e) => setFeedback(e.target.value)}
+                    maxLength={2000}
+                    disabled={busy}
+                  />
+                  <button
+                    className="btn-primary w-full"
+                    disabled={busy || !feedback.trim()}
+                    onClick={applyFeedbackAndRerun}
+                  >
+                    改善点を反映して整理し直す
+                  </button>
+                  {undoableRunId && (
+                    <button
+                      className="btn-ghost w-full text-sm"
+                      disabled={busy}
+                      onClick={undoLast}
+                    >
+                      前回の整理を元に戻す(受信箱へ戻す)
+                    </button>
+                  )}
+                  <p className="text-xs text-gray-400">
+                    前回移動したファイルを受信箱に戻してから、改善点を反映して整理し直します。確認待ちで確定済みのファイルは戻りません。
+                  </p>
+                </div>
               </div>
             )
           }
         />
+      )}
+
+      {savedDir && history.length > 0 && (
+        <section className="card space-y-3">
+          <h2 className="text-sm font-semibold">整理の履歴</h2>
+          <ul className="space-y-2">
+            {history.map((h) => (
+              <li
+                key={h.id}
+                className="space-y-1 border-b border-gray-100 pb-2 last:border-0 last:pb-0"
+              >
+                <div className="flex items-center justify-between gap-2 text-xs text-gray-500">
+                  <span>{new Date(h.created_at).toLocaleString("ja-JP")}</span>
+                  <span>
+                    移動 {h.moved}・保留 {h.held}・エラー {h.errors}
+                    {h.undone ? "・取消済み" : ""}
+                  </span>
+                </div>
+                <p className="text-sm">
+                  {h.instruction ? (
+                    h.instruction
+                  ) : (
+                    <span className="text-gray-400">指示なし</span>
+                  )}
+                </p>
+                {h.instruction && (
+                  <button
+                    className="text-xs text-kura-accent hover:underline"
+                    disabled={busy}
+                    onClick={() => setInstruction(h.instruction ?? "")}
+                  >
+                    この指示を再利用
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
     </div>
   );

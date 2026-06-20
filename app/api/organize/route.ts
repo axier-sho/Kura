@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getWorkingDir } from "@/lib/workspace/settings";
 import { listWorkspace } from "@/lib/workspace/fs";
 import { runOrganize, type OrganizeEvent } from "@/lib/workspace/organize";
+import * as organizeRuns from "@/lib/db/repositories/organizeRuns";
 
 // All filesystem work (list/move/create) happens here in the local Next.js
 // server via Node fs — NOT in the Tauri shell. The desktop webview only calls
@@ -9,7 +10,7 @@ import { runOrganize, type OrganizeEvent } from "@/lib/workspace/organize";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-/** Summarize the working directory: inbox count + category folders. */
+/** Summarize the working directory: inbox count + category folders + history. */
 export async function GET() {
   const workingDir = getWorkingDir();
   if (!workingDir) return NextResponse.json({ workingDir: null });
@@ -19,6 +20,8 @@ export async function GET() {
       workingDir,
       inboxCount: listing.inboxFiles.length,
       categories: listing.categories,
+      history: organizeRuns.listRecent(20),
+      undoableRunId: organizeRuns.latestUndoable(workingDir)?.id ?? null,
     });
   } catch (e) {
     return NextResponse.json(
@@ -34,12 +37,27 @@ export async function GET() {
  * can watch each file being analyzed/moved instead of waiting on an opaque
  * spinner. The terminal `done` event carries the full summary.
  */
-export async function POST() {
+export async function POST(req: NextRequest) {
   if (!getWorkingDir()) {
     return NextResponse.json(
       { error: "ワーキングディレクトリが設定されていません。" },
       { status: 400 },
     );
+  }
+
+  // Optional JSON body: the per-run instruction (incl. appended feedback) and
+  // the feedback delta. Absent/invalid body simply runs with no instruction.
+  let instruction: string | undefined;
+  let feedback: string | undefined;
+  try {
+    const body = (await req.json()) as {
+      instruction?: unknown;
+      feedback?: unknown;
+    };
+    if (typeof body?.instruction === "string") instruction = body.instruction;
+    if (typeof body?.feedback === "string") feedback = body.feedback;
+  } catch {
+    // No/invalid body — run with no instruction.
   }
 
   const encoder = new TextEncoder();
@@ -48,7 +66,7 @@ export async function POST() {
       const send = (event: OrganizeEvent) =>
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       try {
-        await runOrganize(send);
+        await runOrganize(send, { instruction, feedback });
       } catch (e) {
         // The HTTP status is already 200 (headers flushed), so a mid-run
         // failure is reported as a final error event rather than a status code.

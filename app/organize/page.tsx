@@ -2,6 +2,7 @@ import { PageShell } from "@/components/PageShell";
 import { OrganizePanel } from "@/components/workspace/OrganizePanel";
 import { getWorkingDir } from "@/lib/workspace/settings";
 import { listWorkspace } from "@/lib/workspace/fs";
+import * as organizeRuns from "@/lib/db/repositories/organizeRuns";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,23 @@ export default async function OrganizePage() {
     }
   }
 
+  // Drop the move-log before sending history to the client component (it only
+  // needs the summary + instruction text; the move-log holds on-disk paths).
+  const history = organizeRuns.listRecent(20).map((r) => ({
+    id: r.id,
+    created_at: r.created_at,
+    instruction: r.instruction,
+    feedback: r.feedback,
+    processed: r.processed,
+    moved: r.moved,
+    held: r.held,
+    errors: r.errors,
+    undone: r.undone,
+  }));
+  const undoableRunId = workingDir
+    ? organizeRuns.latestUndoable(workingDir)?.id ?? null
+    : null;
+
   return (
     <PageShell
       title="整理"
@@ -30,6 +48,8 @@ export default async function OrganizePage() {
           initialWorkingDir={workingDir}
           initialInboxCount={inboxCount}
           initialCategories={categories}
+          initialHistory={history}
+          initialUndoableRunId={undoableRunId}
         />
       </div>
     </PageShell>

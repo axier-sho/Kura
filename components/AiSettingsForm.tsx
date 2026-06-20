@@ -127,12 +127,16 @@ export function AiSettingsForm({
   keyError,
   model,
   modelEscalation,
+  occupation,
+  customInstruction,
 }: {
   models: string[];
   hasKey: boolean;
   keyError: boolean;
   model: string;
   modelEscalation: string;
+  occupation: string;
+  customInstruction: string;
 }) {
   return (
     <div className="space-y-6">
@@ -174,6 +178,33 @@ export function AiSettingsForm({
             models={models}
             initial={modelEscalation}
           />
+        </div>
+
+        <div className="space-y-4 border-t pt-5">
+          <div>
+            <label className="label">職業(任意)</label>
+            <input
+              name="occupation"
+              className="input"
+              defaultValue={occupation}
+              maxLength={200}
+              autoComplete="off"
+              placeholder="例: 不動産仲介業 / 経理担当"
+            />
+          </div>
+          <div>
+            <label className="label">カスタム指示(任意)</label>
+            <textarea
+              name="custom_instruction"
+              className="input min-h-[80px]"
+              defaultValue={customInstruction}
+              maxLength={2000}
+              placeholder="例: 契約書は物件名でフォルダ分け。請求書は取引先名で。社外秘は『機密』へ。"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              ここに書いた職業・指示は、毎回の整理で常に AI に渡されます。
+            </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
