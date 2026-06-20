@@ -7,15 +7,19 @@ import * as eventsRepo from "@/lib/db/repositories/events";
 
 export const dynamic = "force-dynamic";
 
-function daysUntil(date: string): number {
+function daysUntil(date: string): number | null {
   // Calendar-day delta. "today" must be the LOCAL date: deriving it from
   // toISOString() uses the UTC date, which for JST users between 00:00–09:00 is
   // still yesterday, skewing the count (and the overdue/warning styling) by one.
   // Date.UTC(local Y/M/D) and a "YYYY-MM-DD" string both parse to UTC midnight,
-  // so the subtraction is a pure day difference.
+  // so the subtraction is a pure day difference. An unparseable date (e.g. an
+  // externally-edited DB row) returns null so callers suppress the day count
+  // instead of rendering "あとNaN日".
+  const t = new Date(date).getTime();
+  if (Number.isNaN(t)) return null;
   const n = new Date();
   const today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
-  return Math.round((new Date(date).getTime() - today) / 86_400_000);
+  return Math.round((t - today) / 86_400_000);
 }
 
 export default async function CalendarPage() {

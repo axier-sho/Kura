@@ -1,11 +1,15 @@
 import Link from "next/link";
 import type { EventWithDoc } from "@/lib/db/repositories/events";
 
-function daysUntil(date: string): number {
+function daysUntil(date: string): number | null {
   // Calendar-day delta against the LOCAL today (see app/calendar/page.tsx).
+  // Returns null for an unparseable date so the UI suppresses the day count
+  // rather than rendering "あとNaN日".
+  const t = new Date(date).getTime();
+  if (Number.isNaN(t)) return null;
   const n = new Date();
   const today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate());
-  return Math.round((new Date(date).getTime() - today) / 86_400_000);
+  return Math.round((t - today) / 86_400_000);
 }
 
 /**
@@ -16,9 +20,10 @@ function daysUntil(date: string): number {
  */
 export function ReminderBanner({ events }: { events: EventWithDoc[] }) {
   if (events.length === 0) return null;
-  const overdue = events.filter(
-    (e) => e.due_date && daysUntil(e.due_date) < 0,
-  ).length;
+  const overdue = events.filter((e) => {
+    const d = e.due_date ? daysUntil(e.due_date) : null;
+    return d !== null && d < 0;
+  }).length;
 
   return (
     <div className="card border-amber-300 bg-amber-50">

@@ -24,7 +24,16 @@ export async function POST(req: NextRequest) {
       { status: 400 },
     );
   }
-  if (!templateId || !documentId) {
+  // Validate types, not just truthiness: the body was cast from untrusted JSON,
+  // so a truthy non-string (e.g. {} or []) would pass `!id` and then be bound
+  // into better-sqlite3 .get(), which throws — outside any try/catch, returning
+  // Next's 500 HTML page instead of the { error } JSON every branch here returns.
+  if (
+    typeof templateId !== "string" ||
+    typeof documentId !== "string" ||
+    !templateId ||
+    !documentId
+  ) {
     return NextResponse.json(
       { error: "テンプレートと書類を選択してください。" },
       { status: 400 },

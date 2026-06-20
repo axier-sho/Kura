@@ -158,8 +158,19 @@ export async function POST(req: NextRequest) {
     .get("accept")
     ?.includes("application/x-ndjson");
   if (!wantsStream) {
-    const results = await ingestFiles(files, collectionId);
-    return NextResponse.json({ results });
+    // Mirror the streaming branch's batch-level error handling: a throw before
+    // the per-file loop (e.g. a first-time DB-open failure in getAiConfig)
+    // otherwise returns Next's 500 HTML instead of the { error } JSON shape the
+    // desktop folder-watcher expects.
+    try {
+      const results = await ingestFiles(files, collectionId);
+      return NextResponse.json({ results });
+    } catch (e) {
+      return NextResponse.json(
+        { error: (e as Error).message },
+        { status: 500 },
+      );
+    }
   }
 
   const encoder = new TextEncoder();

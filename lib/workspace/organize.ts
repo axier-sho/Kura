@@ -184,10 +184,16 @@ export async function runOrganize(
         // the one recorded in the collection.
         let collectionId = nameToCollectionId.get(choice.folderName) ?? null;
         let destName = choice.folderName;
+        // Whether THIS run physically created the destination folder. Drives the
+        // undo empty-folder cleanup, so it must reflect on-disk reality — not the
+        // model's is_new flag, which can claim a pre-existing (e.g. an excluded
+        // dot-) folder is new and get that folder rmdir'd on undo.
+        let createdFolder = false;
         if (collectionId === null) {
           destName = sanitizeFolderName(choice.folderName);
           collectionId = nameToCollectionId.get(destName) ?? null;
           if (collectionId === null) {
+            createdFolder = !fs.existsSync(path.join(workingDir, destName));
             createCategoryFolder(workingDir, destName);
             collectionId = ensureCollectionForFolder(destName);
           }
@@ -211,11 +217,17 @@ export async function runOrganize(
           // The file already left the inbox. If the DB write fails, move it back
           // so it stays in the inbox (tracked by the next run) instead of being
           // orphaned in a category folder with no document row pointing at it.
+          // Use moveFile (not a bare renameSync) so the rollback is cross-device
+          // safe: when the inbox and category folder live on different
+          // filesystems the forward move used copy+unlink (EXDEV), and a plain
+          // renameSync back would also fail with EXDEV — stranding the file.
           try {
-            fs.renameSync(newPath, srcPath);
-          } catch {
-            // Best-effort rollback only (e.g. cross-device): leave the moved
-            // file in place and let the original error surface.
+            moveFile(workingDir, newPath, path.dirname(srcPath), filename);
+          } catch (rollbackErr) {
+            console.error(
+              "[kura] failed to roll back move after persist error:",
+              rollbackErr,
+            );
           }
           throw persistErr;
         }
@@ -223,7 +235,7 @@ export async function runOrganize(
           filename,
           action: "moved",
           folder: destName,
-          isNew: choice.isNew,
+          isNew: createdFolder,
           documentId,
           confidence: choice.confidence,
         };
@@ -235,7 +247,7 @@ export async function runOrganize(
           filename,
           toPath: newPath,
           folder: destName,
-          isNew: choice.isNew,
+          isNew: createdFolder,
         });
         emit({ type: "file-done", index, total, result: movedResult });
       } else {

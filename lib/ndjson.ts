@@ -14,17 +14,23 @@ export async function readNdjsonStream<T>(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let nl: number;
-    while ((nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      if (line) onValue(JSON.parse(line) as T);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (line) onValue(JSON.parse(line) as T);
+      }
     }
+    const tail = buffer.trim();
+    if (tail) onValue(JSON.parse(tail) as T);
+  } finally {
+    // Always release the body's lock — even if JSON.parse or onValue throws
+    // mid-stream — so the reader doesn't leave the stream permanently locked.
+    reader.releaseLock();
   }
-  const tail = buffer.trim();
-  if (tail) onValue(JSON.parse(tail) as T);
 }

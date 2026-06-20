@@ -18,8 +18,14 @@ export async function POST(req: NextRequest) {
     // Empty / malformed body: treat as an empty query rather than a 500.
     return NextResponse.json({ documents: [], semanticUsed: false });
   }
-  const q = (body.q ?? "").trim();
-  const collectionId = body.collectionId || null;
+  // Coerce defensively: the body is an unchecked cast over untrusted JSON, so a
+  // non-string `q` (e.g. a number or object) would make `.trim()` throw a
+  // TypeError outside the try/catch above, returning a 500 instead of clean JSON.
+  const q = typeof body.q === "string" ? body.q.trim() : "";
+  const collectionId =
+    typeof body.collectionId === "string" && body.collectionId
+      ? body.collectionId
+      : null;
 
   const similarity = new Map<string, number>();
   const ids = new Set<string>();

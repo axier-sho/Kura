@@ -122,14 +122,23 @@ export function OrganizePanel({
   }, []);
 
   async function refresh() {
-    const res = await fetch("/api/organize");
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.workingDir) {
-      setInboxCount(data.inboxCount ?? 0);
-      setCategories(data.categories ?? []);
-      setHistory(data.history ?? []);
-      setUndoableRunId(data.undoableRunId ?? null);
+    // Best-effort post-action state sync. This is awaited inside the `finally`
+    // blocks of organize()/undoLast(), which are bound bare to onClick — so it
+    // must never reject (a network failure or non-JSON body would otherwise
+    // surface as an unhandled promise rejection). Swallow transient failures and
+    // just keep the current state.
+    try {
+      const res = await fetch("/api/organize");
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (data?.workingDir) {
+        setInboxCount(data.inboxCount ?? 0);
+        setCategories(data.categories ?? []);
+        setHistory(data.history ?? []);
+        setUndoableRunId(data.undoableRunId ?? null);
+      }
+    } catch {
+      // Localhost momentarily unreachable / parse error — ignore.
     }
   }
 

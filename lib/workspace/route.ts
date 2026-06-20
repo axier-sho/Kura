@@ -10,6 +10,7 @@
  */
 import { embed, generate } from "@/lib/gemini";
 import { cosine } from "@/lib/db/vector";
+import { sanitizeFolderName } from "@/lib/workspace/fs";
 import { buildEmbeddingText } from "@/lib/pipeline/embed";
 import type { AiConfig } from "@/lib/ai/config";
 import type { AnalysisResult } from "@/lib/pipeline/types";
@@ -139,15 +140,28 @@ export async function chooseTargetFolder(
     typeof parsed.folder === "string" ? parsed.folder.trim() : "";
   if (!folderRaw || folderRaw.toLowerCase() === "null") return HOLD;
 
+  // Normalize to the same on-disk name organize.ts will actually create, so the
+  // new-vs-existing decision below is made on that name. Without this, a model
+  // name differing from an existing folder only by sanitize-stripped characters
+  // (e.g. a trailing "?") would miss the existingMatch check, be flagged isNew,
+  // then sanitize down to a name that collides with the existing folder.
+  let folderName: string;
+  try {
+    folderName = sanitizeFolderName(folderRaw);
+  } catch {
+    // Sanitizes to an empty/invalid name (all illegal chars): hold for review.
+    return HOLD;
+  }
+
   const conf = Number(parsed.confidence);
   const confidence = Number.isFinite(conf) ? Math.min(1, Math.max(0, conf)) : 0;
 
   // A name matching an existing category (case-insensitive) is never "new".
   const existingMatch = categories.find(
-    (c) => c.toLowerCase() === folderRaw.toLowerCase(),
+    (c) => c.toLowerCase() === folderName.toLowerCase(),
   );
   if (existingMatch) {
     return { folderName: existingMatch, isNew: false, confidence };
   }
-  return { folderName: folderRaw, isNew: Boolean(parsed.is_new), confidence };
+  return { folderName, isNew: Boolean(parsed.is_new), confidence };
 }

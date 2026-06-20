@@ -345,14 +345,19 @@ export function searchByEmbedding(
       // Skip rows whose embedding is corrupt or has a stale dimension (e.g. the
       // embedding model/dim changed): a single bad row must not abort the whole
       // search, and a mismatched dimension would otherwise score as garbage.
-      let parsed: number[];
+      let parsed: unknown;
       try {
-        parsed = JSON.parse(r.embedding) as number[];
+        parsed = JSON.parse(r.embedding);
       } catch {
         return [];
       }
-      if (!Array.isArray(parsed) || parsed.length !== vec.length) return [];
-      return [{ id: r.id, similarity: cosine(vec, parsed) }];
+      // Validate element types, not just length: a row whose embedding contains
+      // a non-finite / non-number element (corrupt or hand-edited row) would
+      // otherwise feed NaN into cosine() and corrupt the whole ranking. Reuses
+      // the same per-element check applied on the mapDoc read path.
+      const nums = asNumberArray(parsed);
+      if (!nums || nums.length !== vec.length) return [];
+      return [{ id: r.id, similarity: cosine(vec, nums) }];
     })
     .sort((a, b) => b.similarity - a.similarity)
     .slice(0, limit);

@@ -59,7 +59,26 @@ export function undoOrganizeRun(runId: string): UndoResult {
         continue;
       }
       const restoredPath = moveFile(workingDir, m.toPath, inboxPath, m.filename);
-      documents.updateLocation(m.documentId, restoredPath, null, "needs_review");
+      try {
+        documents.updateLocation(
+          m.documentId,
+          restoredPath,
+          null,
+          "needs_review",
+        );
+      } catch (updateErr) {
+        // The file was physically moved but the DB write failed (e.g. a locked
+        // DB). Roll the file back to its category location so the entry stays in
+        // a consistent (file + row both at toPath) state and a retry re-attempts
+        // the whole step — otherwise the retry would see the file already gone
+        // from toPath, skip it, and leave the row pointing at the empty old path.
+        try {
+          moveFile(workingDir, restoredPath, path.dirname(m.toPath), m.filename);
+        } catch (rollbackErr) {
+          console.error("[kura] failed to roll back undo move:", rollbackErr);
+        }
+        throw updateErr;
+      }
       if (m.isNew) createdFolders.add(m.folder);
       restored += 1;
     } catch (e) {
