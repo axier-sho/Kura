@@ -48,6 +48,25 @@ export interface OrganizeRunResult {
   results: OrganizeFileResult[];
 }
 
+/**
+ * Progress events streamed to the caller as the run proceeds. The desktop UI
+ * renders these in a console tab so the user can see live, per-file activity
+ * instead of an opaque "整理中…" spinner. `error` is emitted by the route when
+ * the whole run throws (e.g. the working dir vanished mid-run).
+ */
+export type OrganizeEvent =
+  | { type: "start"; total: number; workingDir: string }
+  | { type: "file-start"; index: number; total: number; filename: string }
+  | { type: "file-skip"; index: number; total: number; filename: string }
+  | {
+      type: "file-done";
+      index: number;
+      total: number;
+      result: OrganizeFileResult;
+    }
+  | { type: "done"; summary: OrganizeRunResult }
+  | { type: "error"; message: string };
+
 /** Best-effort MIME type from the file extension (the pipeline re-derives it). */
 function guessMimeType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
@@ -67,14 +86,21 @@ function guessMimeType(filename: string): string {
   return map[ext] ?? "application/octet-stream";
 }
 
-export async function runOrganize(): Promise<OrganizeRunResult> {
+export async function runOrganize(
+  onEvent?: (event: OrganizeEvent) => void,
+): Promise<OrganizeRunResult> {
+  // No-op when no listener is attached (e.g. a non-streaming caller).
+  const emit = (event: OrganizeEvent) => onEvent?.(event);
+
   const workingDir = getWorkingDir();
   if (!workingDir) {
     throw new Error("ワーキングディレクトリが設定されていません。");
   }
 
   const listing = listWorkspace(workingDir);
+  const total = listing.inboxFiles.length;
   const results: OrganizeFileResult[] = [];
+  emit({ type: "start", total, workingDir });
 
   // BYOK: resolve the local API key + model choices once for the whole run.
   const ai = getAiConfig();
@@ -83,8 +109,11 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
   const categories = [...listing.categories];
   const nameToCollectionId = syncCategoriesToCollections(categories);
 
+  let index = 0;
   for (const srcPath of listing.inboxFiles) {
+    index += 1;
     const filename = path.basename(srcPath);
+    emit({ type: "file-start", index, total, filename });
     try {
       const bytes = new Uint8Array(fs.readFileSync(srcPath));
 
@@ -95,6 +124,7 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
       // and re-running can upgrade an earlier stub.
       const cached = documents.findCached(sha256(bytes), PROMPT_VERSION);
       if (cached && documents.getById(cached.id)?.status === "confirmed") {
+        emit({ type: "file-skip", index, total, filename });
         continue;
       }
 
@@ -156,14 +186,16 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
           }
           throw persistErr;
         }
-        results.push({
+        const movedResult: OrganizeFileResult = {
           filename,
           action: "moved",
           folder: destName,
           isNew: choice.isNew,
           documentId,
           confidence: choice.confidence,
-        });
+        };
+        results.push(movedResult);
+        emit({ type: "file-done", index, total, result: movedResult });
       } else {
         // Hold in the inbox; surface in /review. If the AI proposed an existing
         // folder, pre-fill the suggestion via collection_id.
@@ -178,24 +210,28 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
           storagePath: srcPath,
           status: "needs_review",
         });
-        results.push({
+        const heldResult: OrganizeFileResult = {
           filename,
           action: "held",
           folder: choice.folderName ?? undefined,
           documentId,
           confidence: choice.confidence,
-        });
+        };
+        results.push(heldResult);
+        emit({ type: "file-done", index, total, result: heldResult });
       }
     } catch (err) {
-      results.push({
+      const errorResult: OrganizeFileResult = {
         filename,
         action: "error",
         error: (err as Error).message,
-      });
+      };
+      results.push(errorResult);
+      emit({ type: "file-done", index, total, result: errorResult });
     }
   }
 
-  return {
+  const summary: OrganizeRunResult = {
     workingDir,
     processed: results.length,
     moved: results.filter((r) => r.action === "moved").length,
@@ -203,4 +239,6 @@ export async function runOrganize(): Promise<OrganizeRunResult> {
     errors: results.filter((r) => r.action === "error").length,
     results,
   };
+  emit({ type: "done", summary });
+  return summary;
 }

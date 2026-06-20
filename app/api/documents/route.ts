@@ -12,10 +12,104 @@ export const maxDuration = 60;
 // server. Matches the desktop read_file cap (src-tauri/src/lib.rs).
 const MAX_UPLOAD_BYTES = 64 * 1024 * 1024; // 64 MB
 
+interface IngestFileResult {
+  filename: string;
+  documentId?: string;
+  cached?: boolean;
+  doc_type?: string;
+  title?: string;
+  confidence?: number;
+  is_stub?: boolean;
+  error?: string;
+}
+
+/** Progress events streamed (NDJSON) when the client opts into a live console
+ *  via `Accept: application/x-ndjson`. `error` covers a whole-batch failure. */
+type IngestEvent =
+  | { type: "start"; total: number }
+  | { type: "file-start"; index: number; total: number; filename: string }
+  | {
+      type: "file-done";
+      index: number;
+      total: number;
+      result: IngestFileResult;
+    }
+  | { type: "done"; results: IngestFileResult[] }
+  | { type: "error"; message: string };
+
+/** Ingest a batch of files, emitting per-file progress as it goes. The optional
+ *  callback lets the streaming path surface live progress; non-streaming callers
+ *  (the desktop folder-watcher) just take the returned array. */
+async function ingestFiles(
+  files: File[],
+  collectionId: string | null,
+  onEvent?: (event: IngestEvent) => void,
+): Promise<IngestFileResult[]> {
+  const emit = (event: IngestEvent) => onEvent?.(event);
+  // BYOK: resolve the local API key + model choices for the whole batch.
+  const ai = getAiConfig();
+  const total = files.length;
+  const results: IngestFileResult[] = [];
+  emit({ type: "start", total });
+
+  let index = 0;
+  for (const file of files) {
+    index += 1;
+    emit({ type: "file-start", index, total, filename: file.name });
+    let result: IngestFileResult;
+    try {
+      // Reject oversized files before reading them into memory, so one huge file
+      // fails its own entry instead of buffering GBs (or OOM-ing the process).
+      if (file.size > MAX_UPLOAD_BYTES) {
+        result = {
+          filename: file.name,
+          error: `ファイルが大きすぎます(上限 ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB)。`,
+        };
+      } else {
+        // Read the body inside the try so a single corrupt/aborted file fails
+        // just its own entry; reading it before would reject out of the loop and
+        // sink the whole batch (the desktop watcher POSTs several files at once).
+        const input = {
+          bytes: new Uint8Array(await file.arrayBuffer()),
+          filename: file.name,
+          mimeType: file.type || "application/octet-stream",
+        };
+        const output = await runPipeline(input, ai);
+        const { documentId, cached } = await persistDocument(
+          input,
+          output,
+          collectionId,
+        );
+        result = {
+          filename: file.name,
+          documentId,
+          cached,
+          doc_type: output.analysis.doc_type,
+          title: output.analysis.title,
+          confidence: output.analysis.confidence,
+          is_stub: output.analysis.is_stub,
+        };
+      }
+    } catch (e) {
+      result = { filename: file.name, error: (e as Error).message };
+    }
+    results.push(result);
+    emit({ type: "file-done", index, total, result });
+  }
+
+  emit({ type: "done", results });
+  return results;
+}
+
 /**
  * Ingest one or more files: run the pipeline (extract → classify+extract →
  * embed) and persist locally. Used by both the web upload UI and the Tauri
  * desktop folder-watcher (which POSTs watched files here).
+ *
+ * Responds either as a single `{ results }` JSON object (default — the folder
+ * watcher relies on this) or, when the client sends `Accept:
+ * application/x-ndjson`, as a stream of per-file progress events so the upload
+ * UI can show a live console.
  */
 export async function POST(req: NextRequest) {
   let form: FormData;
@@ -44,48 +138,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // BYOK: resolve the local API key + model choices for the whole batch.
-  const ai = getAiConfig();
-
-  const results: Array<Record<string, unknown>> = [];
-  for (const file of files) {
-    try {
-      // Reject oversized files before reading them into memory, so one huge file
-      // fails its own entry instead of buffering GBs (or OOM-ing the process).
-      if (file.size > MAX_UPLOAD_BYTES) {
-        results.push({
-          filename: file.name,
-          error: `ファイルが大きすぎます(上限 ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB)。`,
-        });
-        continue;
-      }
-      // Read the body inside the try so a single corrupt/aborted file fails just
-      // its own entry; reading it before the try would reject out of the loop and
-      // sink the whole batch (the desktop watcher POSTs several files at once).
-      const input = {
-        bytes: new Uint8Array(await file.arrayBuffer()),
-        filename: file.name,
-        mimeType: file.type || "application/octet-stream",
-      };
-      const output = await runPipeline(input, ai);
-      const { documentId, cached } = await persistDocument(
-        input,
-        output,
-        collectionId,
-      );
-      results.push({
-        filename: file.name,
-        documentId,
-        cached,
-        doc_type: output.analysis.doc_type,
-        title: output.analysis.title,
-        confidence: output.analysis.confidence,
-        is_stub: output.analysis.is_stub,
-      });
-    } catch (e) {
-      results.push({ filename: file.name, error: (e as Error).message });
-    }
+  const wantsStream = req.headers
+    .get("accept")
+    ?.includes("application/x-ndjson");
+  if (!wantsStream) {
+    const results = await ingestFiles(files, collectionId);
+    return NextResponse.json({ results });
   }
 
-  return NextResponse.json({ results });
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: IngestEvent) =>
+        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      try {
+        await ingestFiles(files, collectionId, send);
+      } catch (e) {
+        // Headers are already flushed (status 200), so a batch-level failure is
+        // reported as a final error event rather than a status code.
+        send({ type: "error", message: (e as Error).message });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      // Tell any intermediary proxy not to buffer, so events arrive live.
+      "X-Accel-Buffering": "no",
+    },
+  });
 }

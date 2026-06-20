@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ProcessConsole, useConsoleLog } from "@/components/ProcessConsole";
+import { readNdjsonStream } from "@/lib/ndjson";
 
 interface OrganizeFileResult {
   filename: string;
@@ -19,6 +21,22 @@ interface OrganizeRunResult {
   errors: number;
   results: OrganizeFileResult[];
 }
+
+/** Streaming progress events from POST /api/organize (NDJSON, one per line).
+ *  Mirrors OrganizeEvent on the server; kept local so this client component
+ *  never imports the server module (which pulls in node:fs). */
+type OrganizeEvent =
+  | { type: "start"; total: number; workingDir: string }
+  | { type: "file-start"; index: number; total: number; filename: string }
+  | { type: "file-skip"; index: number; total: number; filename: string }
+  | {
+      type: "file-done";
+      index: number;
+      total: number;
+      result: OrganizeFileResult;
+    }
+  | { type: "done"; summary: OrganizeRunResult }
+  | { type: "error"; message: string };
 
 interface TauriGlobal {
   core: {
@@ -63,6 +81,7 @@ export function OrganizePanel({
   const [error, setError] = useState<string | null>(null);
   const [run, setRun] = useState<OrganizeRunResult | null>(null);
   const [isTauri, setIsTauri] = useState(false);
+  const { logs, push: pushLog, clear: clearLogs } = useConsoleLog();
 
   useEffect(() => {
     // window.__TAURI__ is absent during SSR; detect after mount so the first
@@ -116,20 +135,84 @@ export function OrganizePanel({
     }
   }
 
+  function handleEvent(event: OrganizeEvent) {
+    switch (event.type) {
+      case "start":
+        pushLog("info", `受信箱 ${event.total} 件の整理を開始しました。`);
+        break;
+      case "file-start":
+        pushLog(
+          "info",
+          `[${event.index}/${event.total}] ${event.filename} を解析中…`,
+        );
+        break;
+      case "file-skip":
+        pushLog(
+          "info",
+          `[${event.index}/${event.total}] ${event.filename} は確認済みのためスキップしました。`,
+        );
+        break;
+      case "file-done": {
+        const r = event.result;
+        const head = `[${event.index}/${event.total}] ${r.filename}`;
+        if (r.action === "moved") {
+          const pct =
+            typeof r.confidence === "number"
+              ? ` (${Math.round(r.confidence * 100)}%)`
+              : "";
+          pushLog(
+            "success",
+            `${head} → ${r.folder}${r.isNew ? "(新規)" : ""} に移動${pct}`,
+          );
+        } else if (r.action === "held") {
+          pushLog(
+            "warn",
+            `${head} を確認待ちに保留${r.folder ? ` (提案: ${r.folder})` : ""}`,
+          );
+        } else {
+          pushLog("error", `${head} でエラー: ${r.error ?? "不明なエラー"}`);
+        }
+        break;
+      }
+      case "done":
+        setRun(event.summary);
+        pushLog(
+          event.summary.errors > 0 ? "warn" : "success",
+          `完了:処理 ${event.summary.processed} 件(移動 ${event.summary.moved}・保留 ${event.summary.held}・エラー ${event.summary.errors})`,
+        );
+        break;
+      case "error":
+        pushLog("error", `整理に失敗しました: ${event.message}`);
+        setError(event.message);
+        break;
+    }
+  }
+
   async function organize() {
     setBusy(true);
     setError(null);
     setRun(null);
+    clearLogs();
     try {
       const res = await fetch("/api/organize", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "整理に失敗しました");
-      setRun(data as OrganizeRunResult);
-      await refresh();
+      if (!res.ok || !res.body) {
+        // Setup errors (e.g. no working dir) come back as JSON, not a stream.
+        let msg = "整理に失敗しました";
+        try {
+          const data = await res.json();
+          msg = data.error ?? msg;
+        } catch {
+          // Non-JSON body; keep the default message.
+        }
+        throw new Error(msg);
+      }
+      await readNdjsonStream<OrganizeEvent>(res, handleEvent);
     } catch (e) {
-      setError((e as Error).message);
+      pushLog("error", `整理に失敗しました: ${errorMessage(e)}`);
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
+      await refresh();
     }
   }
 
@@ -209,65 +292,80 @@ export function OrganizePanel({
 
       {error && <p className="text-sm text-kura-danger">{error}</p>}
 
-      {run && (
-        <section className="card space-y-3">
-          <h2 className="text-sm font-semibold">
-            整理結果(処理 {run.processed} 件 / 移動 {run.moved} ・保留 {run.held}{" "}
-            ・エラー {run.errors})
-          </h2>
+      {(logs.length > 0 || run) && (
+        <ProcessConsole
+          logs={logs}
+          busy={busy}
+          resultLabel={run ? `結果(${run.processed})` : "結果"}
+          result={
+            run && (
+              <div className="space-y-3">
+                <h2 className="text-sm font-semibold">
+                  整理結果(処理 {run.processed} 件 / 移動 {run.moved} ・保留{" "}
+                  {run.held} ・エラー {run.errors})
+                </h2>
 
-          {moved.length > 0 && (
-            <div>
-              <p className="label">移動済み</p>
-              <ul className="space-y-1 text-sm">
-                {moved.map((r, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2">
-                    <span className="truncate">{r.filename}</span>
-                    <span className="text-xs text-gray-500">
-                      → {r.folder}
-                      {r.isNew ? "(新規)" : ""}
-                      {typeof r.confidence === "number"
-                        ? ` ・${Math.round(r.confidence * 100)}%`
-                        : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                {moved.length > 0 && (
+                  <div>
+                    <p className="label">移動済み</p>
+                    <ul className="space-y-1 text-sm">
+                      {moved.map((r, i) => (
+                        <li
+                          key={i}
+                          className="flex items-center justify-between gap-2"
+                        >
+                          <span className="truncate">{r.filename}</span>
+                          <span className="text-xs text-gray-500">
+                            → {r.folder}
+                            {r.isNew ? "(新規)" : ""}
+                            {typeof r.confidence === "number"
+                              ? ` ・${Math.round(r.confidence * 100)}%`
+                              : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
-          {held.length > 0 && (
-            <div>
-              <p className="label">確認待ちに保留</p>
-              <ul className="space-y-1 text-sm">
-                {held.map((r, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2">
-                    <span className="truncate">{r.filename}</span>
-                    <span className="text-xs text-gray-500">
-                      {r.folder ? `提案: ${r.folder}` : "該当なし"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <Link href="/review" className="btn-ghost mt-2 w-full">
-                確認待ちで振り分けを確定する →
-              </Link>
-            </div>
-          )}
+                {held.length > 0 && (
+                  <div>
+                    <p className="label">確認待ちに保留</p>
+                    <ul className="space-y-1 text-sm">
+                      {held.map((r, i) => (
+                        <li
+                          key={i}
+                          className="flex items-center justify-between gap-2"
+                        >
+                          <span className="truncate">{r.filename}</span>
+                          <span className="text-xs text-gray-500">
+                            {r.folder ? `提案: ${r.folder}` : "該当なし"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <Link href="/review" className="btn-ghost mt-2 w-full">
+                      確認待ちで振り分けを確定する →
+                    </Link>
+                  </div>
+                )}
 
-          {errors.length > 0 && (
-            <div>
-              <p className="label">エラー</p>
-              <ul className="space-y-1 text-sm text-kura-danger">
-                {errors.map((r, i) => (
-                  <li key={i}>
-                    {r.filename}: {r.error}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </section>
+                {errors.length > 0 && (
+                  <div>
+                    <p className="label">エラー</p>
+                    <ul className="space-y-1 text-sm text-kura-danger">
+                      {errors.map((r, i) => (
+                        <li key={i}>
+                          {r.filename}: {r.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )
+          }
+        />
       )}
     </div>
   );
