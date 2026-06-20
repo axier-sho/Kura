@@ -61,7 +61,12 @@ if (!existsSync(join(standalone, "server.js"))) {
 }
 
 console.log("[bundle-server] copying standalone server ->", dest);
-cpSync(standalone, dest, { recursive: true });
+// dereference: copy what each symlink points at, not the symlink itself. Next's
+// standalone tree contains Turbopack external-package symlinks (e.g.
+// .next/node_modules/<pkg>-<hash> -> the real package); recreating them with
+// symlinkSync needs admin/Developer Mode on Windows and EPERMs otherwise. Copying
+// real contents also matches step 4's intent (the final bundle must be symlink-free).
+cpSync(standalone, dest, { recursive: true, dereference: true });
 
 // 1) static assets (JS/CSS chunks). Without these every page 404s its assets.
 const staticSrc = join(projectRoot, ".next", "static");

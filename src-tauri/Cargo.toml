@@ -1,6 +1,6 @@
 [package]
 name = "kura"
-version = "0.1.3"
+version = "1.0.0"
 description = "Kura 書類整理AI (desktop shell)"
 edition = "2021"
 rust-version = "1.77"
