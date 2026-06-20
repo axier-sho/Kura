@@ -75,12 +75,42 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
+/**
+ * Schema version of the CREATE TABLE shape above. The in-place auto-updater
+ * (src-tauri) reuses the existing kura.db across releases, so a bare CREATE
+ * TABLE IF NOT EXISTS never adds a new column to an already-created DB — the
+ * first column change after a release would otherwise throw "no such column" on
+ * every upgraded install. This versioned runner closes that gap.
+ *
+ * When the schema changes: append an idempotent step to MIGRATIONS (ALTER TABLE
+ * etc.) AND update SCHEMA to the new shape so fresh installs get it directly.
+ * MIGRATIONS[i] upgrades a DB at version (BASELINE_VERSION + i) to (i + 1).
+ */
+const BASELINE_VERSION = 1;
+const MIGRATIONS: Array<(db: Database.Database) => void> = [];
+
+function migrate(db: Database.Database): void {
+  let version = db.pragma("user_version", { simple: true }) as number;
+  if (version === 0) {
+    // Either a brand-new DB (the base tables were just created) or a pre-
+    // versioning DB that already carries the baseline columns. Either way it is
+    // at the baseline; stamp it so future migrations have a starting point.
+    version = BASELINE_VERSION;
+    db.pragma(`user_version = ${BASELINE_VERSION}`);
+  }
+  for (let i = version - BASELINE_VERSION; i >= 0 && i < MIGRATIONS.length; i++) {
+    db.transaction(() => MIGRATIONS[i](db))();
+    db.pragma(`user_version = ${BASELINE_VERSION + i + 1}`);
+  }
+}
+
 function open(): Database.Database {
   fs.mkdirSync(dataDir, { recursive: true });
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 
@@ -91,6 +121,14 @@ const globalForDb = globalThis as unknown as { __kuraDb?: Database.Database };
 export function getDb(): Database.Database {
   if (!globalForDb.__kuraDb) globalForDb.__kuraDb = open();
   return globalForDb.__kuraDb;
+}
+
+/**
+ * Run a set of writes atomically: all commit, or none do. Nested calls (a
+ * repository function that opens its own transaction) compose via SAVEPOINTs.
+ */
+export function transaction<T>(fn: () => T): T {
+  return getDb().transaction(fn)();
 }
 
 /** Short opaque id for new rows (replaces Postgres gen_random_uuid()). */

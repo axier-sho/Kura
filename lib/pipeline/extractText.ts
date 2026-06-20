@@ -5,7 +5,11 @@ const MIN_TEXT_LEN = 40;
 
 function isImage(mime: string, filename: string): boolean {
   if (mime.startsWith("image/")) return true;
-  return /\.(png|jpe?g|webp|gif|bmp|tiff?)$/i.test(filename);
+  // Only the formats Gemini vision actually accepts. BMP/TIFF are deliberately
+  // excluded: analyze.visionMimeType() can't map them, so claiming them here
+  // produced a document detected-as-image that was then silently stubbed. They
+  // now fall through to the unknown-binary path and are stubbed honestly.
+  return /\.(png|jpe?g|webp|gif)$/i.test(filename);
 }
 
 function isPdf(mime: string, filename: string): boolean {
@@ -71,7 +75,16 @@ export async function extractText(input: IngestInput): Promise<ExtractedText> {
     }
   }
 
-  // Unknown type: try decoding as text, else vision.
-  const fallback = new TextDecoder().decode(bytes).trim();
-  return { text: fallback, needsVision: fallback.length < MIN_TEXT_LEN };
+  // Unknown type: try decoding as UTF-8 text, else fall back to vision/stub.
+  // A fatal decoder throws on binary (e.g. .xlsx/.pptx/.zip) instead of yielding
+  // a string of U+FFFD replacement chars that would (if long enough) be sent to
+  // Gemini as a bogus text prompt, wasting the user's BYOK quota.
+  try {
+    const fallback = new TextDecoder("utf-8", { fatal: true })
+      .decode(bytes)
+      .trim();
+    return { text: fallback, needsVision: fallback.length < MIN_TEXT_LEN };
+  } catch {
+    return { text: "", needsVision: true };
+  }
 }

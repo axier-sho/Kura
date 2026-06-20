@@ -89,6 +89,11 @@ export function DraftGenerator({
             </option>
           ))}
         </select>
+        {documents.length === 0 && (
+          <p className="mt-1 text-xs text-gray-500">
+            確定済みの書類がありません。確認待ちで書類を確定するか、フォルダ整理を実行すると選択できます。
+          </p>
+        )}
       </div>
       {error && <p className="text-sm text-kura-danger">{error}</p>}
       <button onClick={generate} disabled={busy || !templateId || !documentId} className="btn-primary w-full">

@@ -6,13 +6,35 @@ export type EventWithDoc = EventRow & {
   documents: { title: string | null } | null;
 };
 
-/** Upcoming dated, open events for the dashboard. */
+/** Upcoming dated, open events for the dashboard. Bounded to today-or-later
+ *  (local) so the "直近の期日" list shows genuinely upcoming dates; overdue items
+ *  surface separately via listDueReminders(). */
 export function listUpcoming(limit = 5): EventRow[] {
   return getDb()
     .prepare(
-      "SELECT * FROM events WHERE status = 'open' AND due_date IS NOT NULL ORDER BY due_date ASC LIMIT ?",
+      "SELECT * FROM events WHERE status = 'open' AND due_date IS NOT NULL AND due_date >= date('now', 'localtime') ORDER BY due_date ASC LIMIT ?",
     )
     .all(limit) as EventRow[];
+}
+
+/** Open, dated events that are overdue or within their per-type lead window —
+ *  the "due soon / overdue" set surfaced as reminders when the app is opened. */
+export function listDueReminders(): EventWithDoc[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT e.*, d.title AS doc_title
+         FROM events e
+         LEFT JOIN documents d ON d.id = e.document_id
+        WHERE e.status = 'open'
+          AND e.due_date IS NOT NULL
+          AND e.due_date <= date('now', 'localtime', '+' || e.notify_lead_days || ' days')
+        ORDER BY e.due_date ASC`,
+    )
+    .all() as (EventRow & { doc_title: string | null })[];
+  return rows.map(({ doc_title, ...e }) => ({
+    ...e,
+    documents: e.document_id ? { title: doc_title } : null,
+  }));
 }
 
 /** All open events with their document title, for the calendar (nulls last). */

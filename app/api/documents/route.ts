@@ -7,6 +7,11 @@ import { persistDocument } from "@/lib/pipeline/persist";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// Cap per-file upload size: each file is buffered fully into memory (and base64
+// re-buffered for vision), so a multi-GB file could exhaust the standalone node
+// server. Matches the desktop read_file cap (src-tauri/src/lib.rs).
+const MAX_UPLOAD_BYTES = 64 * 1024 * 1024; // 64 MB
+
 /**
  * Ingest one or more files: run the pipeline (extract → classify+extract →
  * embed) and persist locally. Used by both the web upload UI and the Tauri
@@ -44,12 +49,24 @@ export async function POST(req: NextRequest) {
 
   const results: Array<Record<string, unknown>> = [];
   for (const file of files) {
-    const input = {
-      bytes: new Uint8Array(await file.arrayBuffer()),
-      filename: file.name,
-      mimeType: file.type || "application/octet-stream",
-    };
     try {
+      // Reject oversized files before reading them into memory, so one huge file
+      // fails its own entry instead of buffering GBs (or OOM-ing the process).
+      if (file.size > MAX_UPLOAD_BYTES) {
+        results.push({
+          filename: file.name,
+          error: `ファイルが大きすぎます(上限 ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB)。`,
+        });
+        continue;
+      }
+      // Read the body inside the try so a single corrupt/aborted file fails just
+      // its own entry; reading it before the try would reject out of the loop and
+      // sink the whole batch (the desktop watcher POSTs several files at once).
+      const input = {
+        bytes: new Uint8Array(await file.arrayBuffer()),
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+      };
       const output = await runPipeline(input, ai);
       const { documentId, cached } = await persistDocument(
         input,

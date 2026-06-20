@@ -52,6 +52,7 @@ export function FolderWatchSettings() {
   const [watching, setWatching] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const seen = useRef<Set<string>>(new Set());
+  const recent = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     // Client-only capability check: window.__TAURI__ is undefined during SSR,
@@ -69,10 +70,15 @@ export function FolderWatchSettings() {
     async (path: string) => {
       const tauri = getTauri();
       if (!tauri) return;
-      // Dedupe only while a path is in flight (the watcher can fire several
-      // events for one write). A later "changed" event for the same path is
-      // re-ingested once processing completes.
-      if (seen.current.has(path)) return;
+      // Collapse repeat events for one file: skip if an ingest is already in
+      // flight for this path, or if we ingested it within the recent window. The
+      // Rust watcher emits once a file settles, but a trailing settle/Modify for
+      // the same completed file would otherwise create a duplicate document.
+      const nowMs = Date.now();
+      const last = recent.current.get(path);
+      if (seen.current.has(path) || (last !== undefined && nowMs - last < 15_000)) {
+        return;
+      }
       seen.current.add(path);
       try {
         const file = await tauri.core.invoke<{ name: string; data: string }>(
@@ -99,6 +105,7 @@ export function FolderWatchSettings() {
         addLog(`エラー: ${errorMessage(e)}`);
       } finally {
         seen.current.delete(path);
+        recent.current.set(path, Date.now());
       }
     },
     [addLog],
@@ -108,16 +115,28 @@ export function FolderWatchSettings() {
     const tauri = getTauri();
     if (!tauri) return;
     let unlisten: (() => void) | undefined;
+    let cancelled = false;
     tauri.event
       .listen("kura://file-detected", (e) => {
         const path = String(e.payload);
         void ingest(path);
       })
       .then((u) => {
-        unlisten = u;
+        // If the effect was torn down before this async subscribe resolved,
+        // detach immediately so we don't leak a listener for an unmounted effect.
+        if (cancelled) u();
+        else unlisten = u;
+      })
+      .catch((err) => {
+        // listen() does an IPC round-trip that can reject (with a plain string);
+        // surface it instead of leaving an unhandled rejection.
+        addLog(`エラー: ${errorMessage(err)}`);
       });
-    return () => unlisten?.();
-  }, [ingest]);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [ingest, addLog]);
 
   if (!isTauri) return null;
 

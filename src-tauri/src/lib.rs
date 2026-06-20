@@ -84,8 +84,30 @@ fn read_file(path: String) -> Result<FileData, String> {
     Ok(FileData { name, data })
 }
 
-/// Start watching a folder; emits "kura://file-detected" with the path on
-/// new/changed files.
+/// Poll a file's size until it stops growing (or a ~10s timeout), so a file
+/// still being written — a slow copy from network/USB, or an in-place write —
+/// isn't read mid-write and ingested truncated. Returns false if it vanished.
+fn wait_until_stable(path: &std::path::Path) -> bool {
+    let mut last = match std::fs::metadata(path) {
+        Ok(m) => m.len(),
+        Err(_) => return false,
+    };
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let cur = match std::fs::metadata(path) {
+            Ok(m) => m.len(),
+            Err(_) => return false,
+        };
+        if cur == last {
+            return true;
+        }
+        last = cur;
+    }
+    true
+}
+
+/// Start watching a folder; emits "kura://file-detected" with the path once a
+/// new/changed file has settled.
 #[tauri::command]
 fn start_watch(
     app: tauri::AppHandle,
@@ -99,10 +121,19 @@ fn start_watch(
                 if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_)) {
                     for p in event.paths {
                         if p.is_file() {
-                            let _ = handle.emit(
-                                "kura://file-detected",
-                                p.to_string_lossy().to_string(),
-                            );
+                            // Settle off this callback thread, then emit once, so
+                            // an in-progress write isn't read mid-copy. Trailing
+                            // events for the same completed file are deduped on
+                            // the JS side (recently-ingested window).
+                            let handle = handle.clone();
+                            std::thread::spawn(move || {
+                                if wait_until_stable(&p) {
+                                    let _ = handle.emit(
+                                        "kura://file-detected",
+                                        p.to_string_lossy().to_string(),
+                                    );
+                                }
+                            });
                         }
                     }
                 }

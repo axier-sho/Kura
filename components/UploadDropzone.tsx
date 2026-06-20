@@ -3,6 +3,9 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 
+// Keep in sync with app/api/documents/route.ts and the desktop read_file cap.
+const MAX_UPLOAD_BYTES = 64 * 1024 * 1024; // 64 MB
+
 interface UploadResult {
   filename: string;
   documentId?: string;
@@ -28,7 +31,17 @@ export function UploadDropzone({
 
   function addFiles(list: FileList | null) {
     if (!list) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    const incoming = Array.from(list);
+    const tooBig = incoming.filter((f) => f.size > MAX_UPLOAD_BYTES);
+    const ok = incoming.filter((f) => f.size <= MAX_UPLOAD_BYTES);
+    if (tooBig.length > 0) {
+      setError(
+        `次のファイルは大きすぎます(上限 ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB): ${tooBig
+          .map((f) => f.name)
+          .join("、")}`,
+      );
+    }
+    if (ok.length > 0) setFiles((prev) => [...prev, ...ok]);
   }
 
   async function submit() {

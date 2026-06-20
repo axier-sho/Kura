@@ -1,6 +1,6 @@
 import { PageShell } from "@/components/PageShell";
 import { DraftGenerator } from "@/components/DraftGenerator";
-import { createTemplate } from "./actions";
+import { createTemplate, updateTemplate, deleteTemplate } from "./actions";
 import * as templatesRepo from "@/lib/db/repositories/templates";
 import * as documentsRepo from "@/lib/db/repositories/documents";
 
@@ -32,6 +32,7 @@ export default async function TemplatesPage() {
                 <textarea
                   name="body"
                   rows={6}
+                  required
                   className="input font-mono text-xs"
                   placeholder={"{{ 当事者名 }} 様\n\n{{ 物件名 }} の契約は {{ 更新日 }} に更新期日を迎えます。"}
                 />
@@ -44,13 +45,48 @@ export default async function TemplatesPage() {
             {templates.length > 0 && (
               <div className="card">
                 <h2 className="mb-2 text-sm font-semibold">登録済みテンプレート</h2>
-                <ul className="space-y-2 text-sm">
+                <ul className="space-y-4 text-sm">
                   {templates.map((t) => (
-                    <li key={t.id} className="rounded-md border border-gray-100 p-2">
-                      <div className="font-medium">{t.name}</div>
-                      {t.doc_type && (
-                        <div className="text-xs text-gray-400">{t.doc_type}</div>
-                      )}
+                    <li
+                      key={t.id}
+                      className="space-y-2 rounded-md border border-gray-100 p-3"
+                    >
+                      <form action={updateTemplate} className="space-y-2">
+                        <input type="hidden" name="id" value={t.id} />
+                        <input
+                          name="name"
+                          required
+                          defaultValue={t.name}
+                          className="input"
+                        />
+                        <input
+                          name="doc_type"
+                          defaultValue={t.doc_type ?? ""}
+                          placeholder="対象種別(任意)"
+                          className="input"
+                        />
+                        <textarea
+                          name="body"
+                          rows={4}
+                          required
+                          defaultValue={t.body}
+                          className="input font-mono text-xs"
+                        />
+                        <div className="flex gap-2">
+                          <button type="submit" className="btn-ghost text-xs">
+                            保存
+                          </button>
+                        </div>
+                      </form>
+                      <form action={deleteTemplate}>
+                        <input type="hidden" name="id" value={t.id} />
+                        <button
+                          type="submit"
+                          className="btn-ghost text-xs text-kura-danger"
+                        >
+                          削除
+                        </button>
+                      </form>
                     </li>
                   ))}
                 </ul>

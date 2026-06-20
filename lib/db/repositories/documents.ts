@@ -25,26 +25,58 @@ type RawDoc = {
 };
 
 /** Tolerant JSON parse for TEXT columns: a corrupt/truncated value (e.g. an
- *  externally-edited DB or a partial write) degrades to `fallback` instead of
+ *  externally-edited DB or a partial write) degrades to `null` instead of
  *  throwing and crashing every read of every document. */
-function safeParse<T>(raw: string | null | undefined, fallback: T): T {
-  if (!raw) return fallback;
+function safeParse(raw: string | null | undefined): unknown {
+  if (!raw) return undefined;
   try {
-    return JSON.parse(raw) as T;
+    return JSON.parse(raw) as unknown;
   } catch {
-    return fallback;
+    return undefined;
   }
+}
+
+const STATUSES = new Set<DocumentRow["status"]>([
+  "pending",
+  "needs_review",
+  "confirmed",
+]);
+
+/** Coerce a status read from the DB into the union; unknown values (an
+ *  externally-edited row, no CHECK constraint) fall back to needs_review so the
+ *  UI's exhaustive status maps never index to undefined. */
+function normStatus(s: string): DocumentRow["status"] {
+  return (STATUSES as Set<string>).has(s)
+    ? (s as DocumentRow["status"])
+    : "needs_review";
+}
+
+/** Validate the parsed JSON shape, not just its syntax: a syntactically valid
+ *  but wrong-typed value (e.g. keywords stored as `{}`) would otherwise be
+ *  returned through an unsound cast and break downstream .join/Object.entries. */
+function asFields(v: unknown): Record<string, string | number | null> {
+  return v && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, string | number | null>)
+    : {};
+}
+
+function asStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+function asNumberArray(v: unknown): number[] | null {
+  return Array.isArray(v) && v.every((x) => typeof x === "number" && Number.isFinite(x))
+    ? (v as number[])
+    : null;
 }
 
 function mapDoc(r: RawDoc): DocumentRow {
   return {
     ...r,
-    extracted_fields: safeParse(
-      r.extracted_fields,
-      {} as Record<string, string | number | null>,
-    ),
-    keywords: safeParse(r.keywords, [] as string[]),
-    embedding: safeParse(r.embedding, null as number[] | null),
+    status: normStatus(r.status),
+    extracted_fields: asFields(safeParse(r.extracted_fields)),
+    keywords: asStringArray(safeParse(r.keywords)),
+    embedding: asNumberArray(safeParse(r.embedding)),
     is_stub: r.is_stub === 1,
   };
 }
@@ -88,6 +120,22 @@ export interface CollectionFilter {
   to?: string;
 }
 
+/** A local calendar day "YYYY-MM-DD" → the UTC instant of its local midnight.
+ *  Returns null for an unparseable date so a bad filter is ignored, not thrown. */
+function localDayStartUtc(day: string): string | null {
+  const d = new Date(`${day}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Local "YYYY-MM-DD" → the UTC instant of the NEXT local midnight (exclusive
+ *  upper bound, so the whole `to` day is included regardless of ms precision). */
+function nextLocalDayStartUtc(day: string): string | null {
+  const d = new Date(`${day}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + 1);
+  return d.toISOString();
+}
+
 export function listByCollection(
   collectionId: string,
   filter: CollectionFilter = {},
@@ -98,13 +146,21 @@ export function listByCollection(
     sql += " AND doc_type = ?";
     args.push(filter.type);
   }
-  if (filter.from) {
+  // created_at is stored as a UTC ISO instant; the filter inputs are the user's
+  // LOCAL calendar days (<input type=date>). Kura's Next server runs on the
+  // user's own machine, so its local tz is the user's — convert each picked day
+  // to the matching UTC instant and use a half-open [from, dayAfter(to)) range.
+  // This fixes both the dropped-last-second bug (a bare `${to}T23:59:59` string
+  // compare excluded HH:MM:59.xxx timestamps) and the timezone-offset skew.
+  const fromInstant = filter.from ? localDayStartUtc(filter.from) : null;
+  if (fromInstant) {
     sql += " AND created_at >= ?";
-    args.push(filter.from);
+    args.push(fromInstant);
   }
-  if (filter.to) {
-    sql += " AND created_at <= ?";
-    args.push(`${filter.to}T23:59:59`);
+  const toInstant = filter.to ? nextLocalDayStartUtc(filter.to) : null;
+  if (toInstant) {
+    sql += " AND created_at < ?";
+    args.push(toInstant);
   }
   sql += " ORDER BY created_at DESC";
   return (getDb().prepare(sql).all(...args) as RawDoc[]).map(mapDoc);
@@ -245,6 +301,11 @@ export function searchStructured(
   collectionId: string | null,
   limit = 50,
 ): string[] {
+  // An empty query with no collection scope would otherwise become
+  // `WHERE 1 = 1 LIMIT 50` and return 50 arbitrary documents; treat it as a
+  // no-op so submitting a blank search box shows nothing, not the whole DB.
+  if (!q && !collectionId) return [];
+
   let sql = "SELECT id FROM documents WHERE 1 = 1";
   const args: unknown[] = [];
   if (collectionId) {

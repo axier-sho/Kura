@@ -15,6 +15,7 @@ export default function SettingsPage() {
       <AiSettingsForm
         models={[...GEMINI_MODELS]}
         hasKey={view.hasKey}
+        keyError={view.keyError}
         model={view.model}
         modelEscalation={view.modelEscalation}
       />

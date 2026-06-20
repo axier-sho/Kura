@@ -1,20 +1,55 @@
 /**
  * At-rest encryption for user secrets (the BYOK Gemini API key).
  *
- * AES-256-GCM keyed by KURA_ENCRYPTION_KEY (any string; hashed to 32 bytes).
- * When the env key is absent the secret is stored as plaintext and a one-time
- * warning is logged so the app still runs with nothing configured (env-gating
- * ethos), while encryption is a single env var away in production.
+ * AES-256-GCM. The key is resolved in this order:
+ *   1. KURA_ENCRYPTION_KEY env var (self-host / web; any string, hashed to 32B).
+ *   2. A random 32-byte key persisted under the app-data dir (`enc.key`),
+ *      generated on first use. This is what the packaged desktop app uses — the
+ *      Tauri sidecar never sets the env var, so without this fallback the key
+ *      would be stored in plaintext. Keeping the key in a separate 0600 file
+ *      (not the DB) means the API key is no longer sitting in plaintext inside a
+ *      database file that may be backed up, synced, or shared for support.
+ * Only when neither is available (env unset AND the key file cannot be created)
+ * is the secret stored as plaintext, with a one-time warning.
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { dataDir } from "@/lib/paths";
 
 const PREFIX = "enc:v1:";
+const KEY_FILE = path.join(dataDir, "enc.key");
 
-/** Derive a 32-byte key from KURA_ENCRYPTION_KEY, or null when unset. */
+// Resolve the key once per process. `undefined` = not yet resolved; `null` =
+// resolved to "no key available" (plaintext mode).
+let cachedKey: Buffer | null | undefined;
+
+/** Read the persisted local key, creating it (0600) on first use. */
+function loadOrCreateLocalKey(): Buffer | null {
+  try {
+    const existing = fs.readFileSync(KEY_FILE);
+    if (existing.length === 32) return existing;
+  } catch {
+    // Missing/unreadable — fall through and try to create it.
+  }
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    const key = randomBytes(32);
+    fs.writeFileSync(KEY_FILE, key, { mode: 0o600 });
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+/** Derive the 32-byte AES key (env override, else the persisted local key). */
 function deriveKey(): Buffer | null {
+  if (cachedKey !== undefined) return cachedKey;
   const secret = process.env.KURA_ENCRYPTION_KEY ?? "";
-  if (!secret) return null;
-  return createHash("sha256").update(secret).digest();
+  cachedKey = secret
+    ? createHash("sha256").update(secret).digest()
+    : loadOrCreateLocalKey();
+  return cachedKey;
 }
 
 let warned = false;
@@ -22,7 +57,7 @@ function warnPlaintextOnce(): void {
   if (warned) return;
   warned = true;
   console.warn(
-    "[kura] KURA_ENCRYPTION_KEY が未設定です。API キーを暗号化せず平文で保存します。",
+    "[kura] 暗号鍵を利用できません。API キーを暗号化せず平文で保存します。",
   );
 }
 
@@ -54,7 +89,13 @@ export function decryptSecret(stored: string): string {
   if (!key) {
     throw new Error("KURA_ENCRYPTION_KEY が未設定のため API キーを復号できません。");
   }
-  const [ivB64, tagB64, dataB64] = stored.slice(PREFIX.length).split(":");
+  const parts = stored.slice(PREFIX.length).split(":");
+  if (parts.length !== 3 || parts.some((p) => !p)) {
+    // Corrupt/truncated ciphertext: fail with a clear, catchable message instead
+    // of an opaque TypeError from Buffer.from(undefined, ...) downstream.
+    throw new Error("暗号化された API キーの形式が不正です。");
+  }
+  const [ivB64, tagB64, dataB64] = parts;
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(ivB64, "base64"));
   decipher.setAuthTag(Buffer.from(tagB64, "base64"));
   const dec = Buffer.concat([

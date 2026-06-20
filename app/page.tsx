@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { isAiConfigured } from "@/lib/ai/config";
 import { PageShell } from "@/components/PageShell";
+import { ReminderBanner } from "@/components/ReminderBanner";
 import { FolderWatchSettings } from "@/components/desktop/FolderWatchSettings";
 import * as documentsRepo from "@/lib/db/repositories/documents";
 import * as collectionsRepo from "@/lib/db/repositories/collections";
@@ -22,6 +23,7 @@ export default async function DashboardPage() {
   const confirmed = documentsRepo.countByStatus("confirmed");
   const collections = collectionsRepo.count();
   const upcoming = eventsRepo.listUpcoming(5);
+  const reminders = eventsRepo.listDueReminders();
 
   return (
     <PageShell
@@ -29,6 +31,8 @@ export default async function DashboardPage() {
       description="書類整理の状況と直近の期日。"
     >
       <div className="space-y-8">
+        <ReminderBanner events={reminders} />
+
         {!isAiConfigured() && (
           <div className="card border-amber-300 bg-amber-50 text-sm text-amber-900">
             AI を使うには{" "}

@@ -38,8 +38,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "見つかりません。" }, { status: 404 });
   }
 
-  const filled = fillTemplate(template.body, document.extracted_fields ?? {});
-  const buffer = await buildDocx(template.name, filled);
+  let buffer: Buffer;
+  try {
+    const filled = fillTemplate(template.body, document.extracted_fields ?? {});
+    buffer = await buildDocx(template.name, filled);
+  } catch (err) {
+    // fillTemplate runs a regex over an untrusted template body and buildDocx's
+    // Packer.toBuffer() can reject; without this the route would return Next's
+    // 500 HTML page instead of the { error } JSON every other route returns.
+    console.error("[kura] draft generation failed:", err);
+    return NextResponse.json(
+      { error: "ドラフトの生成に失敗しました。" },
+      { status: 500 },
+    );
+  }
 
   const filename = encodeURIComponent(`${template.name}_draft.docx`);
   return new NextResponse(new Uint8Array(buffer), {

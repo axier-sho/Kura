@@ -27,3 +27,20 @@ export function insert(
     .run(id, name, docType, body, now());
   return id;
 }
+
+export function update(
+  id: string,
+  name: string,
+  docType: string | null,
+  body: string,
+): void {
+  getDb()
+    .prepare(
+      "UPDATE templates SET name = ?, doc_type = ?, body = ?, version = version + 1 WHERE id = ?",
+    )
+    .run(name, docType, body, id);
+}
+
+export function deleteById(id: string): void {
+  getDb().prepare("DELETE FROM templates WHERE id = ?").run(id);
+}
