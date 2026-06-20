@@ -73,6 +73,21 @@ CREATE TABLE IF NOT EXISTS settings (
   value      TEXT,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS organize_runs (
+  id          TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL,
+  working_dir TEXT NOT NULL,
+  instruction TEXT,
+  feedback    TEXT,
+  processed   INTEGER NOT NULL,
+  moved       INTEGER NOT NULL,
+  held        INTEGER NOT NULL,
+  errors      INTEGER NOT NULL,
+  moves       TEXT NOT NULL DEFAULT '[]',
+  undone      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS organize_runs_created_idx ON organize_runs(created_at);
 `;
 
 /**

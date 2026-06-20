@@ -19,6 +19,9 @@ export const SETTINGS_KEYS = {
   apiKey: "gemini_api_key",
   model: "gemini_model",
   modelEscalation: "gemini_model_escalation",
+  // Standing user context, applied to every organize run (not a secret, plain).
+  occupation: "user_occupation",
+  customInstruction: "user_custom_instruction",
 } as const;
 
 /**
@@ -81,6 +84,21 @@ export function isAiConfigured(): boolean {
 }
 
 /**
+ * Standing user profile (occupation + custom instruction) registered in
+ * /settings. Plain text — not a secret — and applied to every organize run as
+ * top-priority routing context. Empty strings when unset.
+ */
+export function getUserProfile(): {
+  occupation: string;
+  customInstruction: string;
+} {
+  return {
+    occupation: settingsRepo.get(SETTINGS_KEYS.occupation) ?? "",
+    customInstruction: settingsRepo.get(SETTINGS_KEYS.customInstruction) ?? "",
+  };
+}
+
+/**
  * What the settings form needs to render. Never returns the key itself — only
  * whether a *usable* one is stored. `hasKey` reflects decryptability, not mere
  * row existence: a stored key that no longer decrypts (e.g. KURA_ENCRYPTION_KEY
@@ -92,6 +110,8 @@ export function getAiSettingsView(): {
   keyError: boolean;
   model: string;
   modelEscalation: string;
+  occupation: string;
+  customInstruction: string;
 } {
   const stored = settingsRepo.get(SETTINGS_KEYS.apiKey);
   let hasKey = false;
@@ -103,6 +123,7 @@ export function getAiSettingsView(): {
       keyError = true;
     }
   }
+  const profile = getUserProfile();
   return {
     hasKey,
     keyError,
@@ -110,5 +131,7 @@ export function getAiSettingsView(): {
     modelEscalation:
       settingsRepo.get(SETTINGS_KEYS.modelEscalation) ??
       env.geminiModelEscalation,
+    occupation: profile.occupation,
+    customInstruction: profile.customInstruction,
   };
 }
