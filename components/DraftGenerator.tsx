@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
+import { useToast } from "@/components/ui/ToastProvider";
 
 /** Extract the download filename from a Content-Disposition header. */
 function filenameFromDisposition(cd: string | null, fallback: string): string {
@@ -29,6 +33,7 @@ export function DraftGenerator({
   const [documentId, setDocumentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function generate() {
     if (!templateId || !documentId) return;
@@ -55,8 +60,10 @@ export function DraftGenerator({
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+      toast.success(".docx を生成しました");
     } catch (e) {
       setError((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -68,37 +75,42 @@ export function DraftGenerator({
       <p className="text-xs text-gray-500">
         テンプレートの差し込み欄に、選んだ書類の抽出項目を流し込んで .docx を生成します(確定は人が行います)。
       </p>
-      <div>
-        <label className="label">テンプレート</label>
-        <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+      <Field label="テンプレート">
+        <Select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
           <option value="">選択してください</option>
           {templates.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
             </option>
           ))}
-        </select>
-      </div>
-      <div>
-        <label className="label">差し込む書類(確定済み)</label>
-        <select className="input" value={documentId} onChange={(e) => setDocumentId(e.target.value)}>
+        </Select>
+      </Field>
+      <Field
+        label="差し込む書類(確定済み)"
+        hint={
+          documents.length === 0
+            ? "確定済みの書類がありません。確認待ちで書類を確定するか、フォルダ整理を実行すると選択できます。"
+            : undefined
+        }
+      >
+        <Select value={documentId} onChange={(e) => setDocumentId(e.target.value)}>
           <option value="">選択してください</option>
           {documents.map((d) => (
             <option key={d.id} value={d.id}>
               {d.title ?? d.original_filename ?? d.id}
             </option>
           ))}
-        </select>
-        {documents.length === 0 && (
-          <p className="mt-1 text-xs text-gray-500">
-            確定済みの書類がありません。確認待ちで書類を確定するか、フォルダ整理を実行すると選択できます。
-          </p>
-        )}
-      </div>
+        </Select>
+      </Field>
       {error && <p className="text-sm text-kura-danger">{error}</p>}
-      <button onClick={generate} disabled={busy || !templateId || !documentId} className="btn-primary w-full">
+      <Button
+        onClick={generate}
+        loading={busy}
+        disabled={!templateId || !documentId}
+        className="w-full"
+      >
         {busy ? "生成中…" : ".docx を生成してダウンロード"}
-      </button>
+      </Button>
     </div>
   );
 }

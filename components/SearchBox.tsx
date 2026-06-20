@@ -2,21 +2,20 @@
 
 import { useState } from "react";
 import { DocumentCard } from "@/components/DocumentCard";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { Input } from "@/components/ui/Input";
+import { SearchIcon } from "@/components/ui/icons";
+import { useToast } from "@/components/ui/ToastProvider";
 import type { DocumentRow } from "@/lib/db/types";
 
-export function SearchBox({
-  collections,
-  geminiEnabled,
-}: {
-  collections: { id: string; name: string }[];
-  geminiEnabled: boolean;
-}) {
+export function SearchBox({ geminiEnabled }: { geminiEnabled: boolean }) {
   const [q, setQ] = useState("");
-  const [collectionId, setCollectionId] = useState("");
   const [busy, setBusy] = useState(false);
   const [docs, setDocs] = useState<DocumentRow[] | null>(null);
   const [semanticUsed, setSemanticUsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function run(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +25,7 @@ export function SearchBox({
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ q, collectionId: collectionId || undefined }),
+        body: JSON.stringify({ q }),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -37,6 +36,7 @@ export function SearchBox({
       setSemanticUsed(Boolean(data.semanticUsed));
     } catch (err) {
       setError((err as Error).message);
+      toast.error((err as Error).message);
       setDocs(null);
     } finally {
       setBusy(false);
@@ -48,31 +48,15 @@ export function SearchBox({
       <form onSubmit={run} className="card flex flex-wrap items-end gap-3">
         <div className="min-w-60 flex-1">
           <label className="label">キーワード / あいまいな言葉</label>
-          <input
+          <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            className="input"
             placeholder={geminiEnabled ? "例: 来月更新の契約、A社の請求" : "タイトル・種別で検索"}
           />
         </div>
-        <div>
-          <label className="label">コレクション</label>
-          <select
-            value={collectionId}
-            onChange={(e) => setCollectionId(e.target.value)}
-            className="input min-w-40"
-          >
-            <option value="">すべて</option>
-            {collections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button type="submit" disabled={busy} className="btn-primary">
+        <Button type="submit" loading={busy}>
           {busy ? "検索中…" : "検索"}
-        </button>
+        </Button>
       </form>
 
       {!geminiEnabled && (
@@ -89,11 +73,19 @@ export function SearchBox({
             {docs.length} 件
             {semanticUsed ? "(意味検索 + 構造化検索)" : "(構造化検索)"}
           </p>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {docs.map((d) => (
-              <DocumentCard key={d.id} doc={d} />
-            ))}
-          </div>
+          {docs.length === 0 ? (
+            <EmptyState
+              icon={<SearchIcon />}
+              title="該当する書類はありません"
+              description="キーワードを変えるか、コレクションの絞り込みを「すべて」にしてお試しください。"
+            />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {docs.map((d) => (
+                <DocumentCard key={d.id} doc={d} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -13,13 +13,7 @@ function ConfidenceBadge({ value }: { value: number | null }) {
   return <span className={`badge ${cls}`}>確信度 {pct}%</span>;
 }
 
-export function ReviewForm({
-  doc,
-  collections,
-}: {
-  doc: DocumentRow;
-  collections: { id: string; name: string }[];
-}) {
+export function ReviewForm({ doc }: { doc: DocumentRow }) {
   const fieldEntries = Object.entries(doc.extracted_fields ?? {});
 
   return (
@@ -48,22 +42,6 @@ export function ReviewForm({
           <label className="label">種別</label>
           <input name="doc_type" defaultValue={doc.doc_type ?? ""} className="input" />
         </div>
-      </div>
-
-      <div>
-        <label className="label">コレクション</label>
-        <select
-          name="collection_id"
-          defaultValue={doc.collection_id ?? ""}
-          className="input"
-        >
-          <option value="">未分類</option>
-          {collections.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
       </div>
 
       <div>

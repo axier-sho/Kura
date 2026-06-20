@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
 
 /**
  * Desktop-only panel (Tauri). Lets the user pick a local folder; the Rust shell
@@ -185,18 +186,18 @@ export function FolderWatchSettings() {
         指定したフォルダを監視し、追加されたファイルを自動で取り込みます。
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={pick} className="btn-ghost text-sm">
+        <Button variant="ghost" onClick={pick} className="text-sm">
           フォルダを選択
-        </button>
+        </Button>
         {folder && <span className="truncate text-xs text-gray-600">{folder}</span>}
       </div>
       <div className="flex gap-2">
-        <button onClick={start} disabled={!folder || watching} className="btn-primary text-sm">
+        <Button onClick={start} disabled={!folder || watching} className="text-sm">
           監視開始
-        </button>
-        <button onClick={stop} disabled={!watching} className="btn-ghost text-sm">
+        </Button>
+        <Button variant="ghost" onClick={stop} disabled={!watching} className="text-sm">
           停止
-        </button>
+        </Button>
       </div>
       {log.length > 0 && (
         <ul className="space-y-0.5 text-xs text-gray-500">

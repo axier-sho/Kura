@@ -1,5 +1,9 @@
 import { PageShell } from "@/components/PageShell";
 import { DraftGenerator } from "@/components/DraftGenerator";
+import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import { createTemplate, updateTemplate, deleteTemplate } from "./actions";
 import * as templatesRepo from "@/lib/db/repositories/templates";
 import * as documentsRepo from "@/lib/db/repositories/documents";
@@ -16,31 +20,28 @@ export default async function TemplatesPage() {
       description="差し込み欄付きのテンプレートを登録し、抽出済み項目から書類ドラフトを自動生成します。"
     >
       <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-6">
-            <form action={createTemplate} className="card space-y-3">
-              <h2 className="text-sm font-semibold">新しいテンプレート</h2>
-              <div>
-                <label className="label">名前</label>
-                <input name="name" required className="input" placeholder="例: 契約更新通知" />
-              </div>
-              <div>
-                <label className="label">対象種別(任意)</label>
-                <input name="doc_type" className="input" placeholder="例: 賃貸借契約書" />
-              </div>
-              <div>
-                <label className="label">本文(差し込みは {"{{ 項目名 }}"} の形式)</label>
-                <textarea
-                  name="body"
-                  rows={6}
-                  required
-                  className="input font-mono text-xs"
-                  placeholder={"{{ 当事者名 }} 様\n\n{{ 物件名 }} の契約は {{ 更新日 }} に更新期日を迎えます。"}
-                />
-              </div>
-              <button type="submit" className="btn-primary w-full">
-                登録
-              </button>
-            </form>
+        <div className="space-y-6">
+          <form action={createTemplate} className="card space-y-3">
+            <h2 className="text-sm font-semibold text-gray-700">新しいテンプレート</h2>
+            <Field label="名前">
+              <Input name="name" required placeholder="例: 契約更新通知" />
+            </Field>
+            <Field label="対象種別(任意)">
+              <Input name="doc_type" placeholder="例: 賃貸借契約書" />
+            </Field>
+            <Field label={`本文(差し込みは ${"{{ 項目名 }}"} の形式)`}>
+              <Textarea
+                name="body"
+                rows={6}
+                required
+                className="font-mono text-xs"
+                placeholder={"{{ 当事者名 }} 様\n\n{{ 物件名 }} の契約は {{ 更新日 }} に更新期日を迎えます。"}
+              />
+            </Field>
+            <Button type="submit" className="w-full">
+              登録
+            </Button>
+          </form>
 
             {templates.length > 0 && (
               <div className="card">

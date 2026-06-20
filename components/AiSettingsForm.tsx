@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { updateAiSettings, clearApiKey } from "@/app/settings/actions";
+import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/ui/ToastProvider";
 
 function SaveButton() {
   const { pending } = useFormStatus();
   return (
-    <button type="submit" disabled={pending} className="btn-primary">
+    <Button type="submit" loading={pending}>
       {pending ? "保存中…" : "保存"}
-    </button>
+    </Button>
   );
 }
 
@@ -23,6 +25,7 @@ function TestConnectionButton() {
     status: "idle" | "testing" | "ok" | "error";
     message?: string;
   }>({ status: "idle" });
+  const toast = useToast();
 
   async function test() {
     setState({ status: "testing" });
@@ -32,27 +35,32 @@ function TestConnectionButton() {
         ok?: boolean;
         error?: string;
       };
-      if (data.ok) setState({ status: "ok" });
-      else
-        setState({
-          status: "error",
-          message: data.error ?? "接続に失敗しました。",
-        });
+      if (data.ok) {
+        setState({ status: "ok" });
+        toast.success("接続に成功しました");
+      } else {
+        const message = data.error ?? "接続に失敗しました。";
+        setState({ status: "error", message });
+        toast.error(message);
+      }
     } catch (e) {
-      setState({ status: "error", message: (e as Error).message });
+      const message = (e as Error).message;
+      setState({ status: "error", message });
+      toast.error(message);
     }
   }
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={test}
-        disabled={state.status === "testing"}
-        className="btn-ghost text-sm"
+        loading={state.status === "testing"}
+        className="text-sm"
       >
         {state.status === "testing" ? "テスト中…" : "接続テスト"}
-      </button>
+      </Button>
       {state.status === "ok" && (
         <span className="text-xs text-kura-accent">接続に成功しました。</span>
       )}
@@ -190,9 +198,9 @@ export function AiSettingsForm({
               削除すると AI は再び「未設定」のスタブに戻ります。
             </p>
           </div>
-          <button type="submit" className="btn-ghost text-sm text-kura-danger">
+          <Button type="submit" variant="danger" className="text-sm">
             キーを削除
-          </button>
+          </Button>
         </form>
       ) : null}
     </div>

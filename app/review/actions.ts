@@ -18,15 +18,12 @@ export async function reviewDocument(formData: FormData): Promise<void> {
   const intent = String(formData.get("intent") ?? "save");
   const title = String(formData.get("title") ?? "").trim();
   const docType = String(formData.get("doc_type") ?? "").trim();
-  const rawCollectionId = String(formData.get("collection_id") ?? "") || null;
-  // collection_id is client-controlled form data. Drop it unless it resolves to
-  // a real collection: documents.collection_id is a FOREIGN KEY (PRAGMA
-  // foreign_keys = ON), so a bogus id would make better-sqlite3 throw a raw
-  // "FOREIGN KEY constraint failed" out of this action.
-  const collectionId =
-    rawCollectionId && collectionsRepo.getById(rawCollectionId)
-      ? rawCollectionId
-      : null;
+  // The collections UI was removed, so the form no longer carries a collection.
+  // Preserve whatever collection_id the document already has — organize pre-fills
+  // a held file's proposed folder here, so confirming it still files the file
+  // into that folder below.
+  const doc = documentsRepo.getById(id);
+  const collectionId = doc?.collection_id ?? null;
 
   // Reconstruct extracted_fields from field__<key> inputs. The form carries the
   // original value type in fieldtype__<key> so numeric fields stay numbers
@@ -55,8 +52,6 @@ export async function reviewDocument(formData: FormData): Promise<void> {
       fields[fieldKey] = v;
     }
   }
-
-  const doc = documentsRepo.getById(id);
 
   try {
     documentsRepo.updateReview(id, {
@@ -99,5 +94,4 @@ export async function reviewDocument(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/review");
-  revalidatePath("/collections");
 }

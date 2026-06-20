@@ -11,8 +11,8 @@
 ![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=for-the-badge&logo=rust&logoColor=white)
 
 Kura ingests your files, uses AI (Google Gemini) to determine "what kind of
-document this is" and extract the relevant information, organizes them by
-collection, and lets you find them later with **structured search + semantic
+document this is" and extract the relevant information, organizes them into
+folders, and lets you find them later with **structured search + semantic
 search**. Extracted dates (renewal dates, handover dates, payment due dates,
 etc.) are automatically turned into a calendar, and it can also generate
 document drafts (.docx) from templates.
@@ -28,13 +28,13 @@ document drafts (.docx) from templates.
 
 ## Key Features
 
-1. **Ingest** Drag & drop, or (desktop version) **automatic folder watching**
+1. **Ingest** Drop files into a watched folder's `_inbox` (Organize), or (desktop version) **automatic folder watching**
 2. **Classify + Extract** Gemini outputs the type, fields, keywords, due-date events, and confidence in a single JSON pass
 3. **Text-first / Vision fallback** DOCX and text-layer PDFs are extracted directly; images and scans use Vision
 4. **Resolution/model escalation** Only when confidence is low, retry with a higher-tier model (`gemini-2.5-pro`)
 5. **Human in the loop** Review and correct the AI's proposed organization before confirming; corrections become ground-truth data
-6. **Organize** A "collection → type → file" hierarchy + structured filters
-7. **Search** Structured (type, collection, date) + semantic search (cosine similarity computed on-device)
+6. **Organize** A "folder → type → file" hierarchy + structured filters
+7. **Search** Structured (type, date) + semantic search (cosine similarity computed on-device)
 8. **Due-date calendar** Extracted due dates are automatically turned into a calendar, with upcoming dates surfaced on the dashboard
 9. **Draft generation** Generate .docx from templates + extracted fields (a person makes the final call)
 10. **Local storage** Saved to SQLite + local files. No server, no account

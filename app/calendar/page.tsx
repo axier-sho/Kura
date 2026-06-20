@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { PageShell } from "@/components/PageShell";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { CalendarIcon } from "@/components/ui/icons";
 import { updateEventStatus } from "./actions";
 import * as eventsRepo from "@/lib/db/repositories/events";
 
@@ -25,9 +27,11 @@ export default async function CalendarPage() {
       description="書類から抽出した期日(更新・引き渡し・解約予告・支払など)。期日が近づくと、ダッシュボードとこの画面で強調表示されます。"
     >
       {events.length === 0 ? (
-        <div className="card text-sm text-gray-500">
-          期日はありません。書類を取り込むと、抽出された期日がここに表示されます。
-        </div>
+        <EmptyState
+          icon={<CalendarIcon />}
+          title="期日はありません"
+          description="書類を整理して内容が確定すると、抽出された期日がここに表示されます。"
+        />
       ) : (
         <div className="space-y-3">
           {events.map((e) => {

@@ -2,16 +2,20 @@ import Link from "next/link";
 import { isAiConfigured } from "@/lib/ai/config";
 import { PageShell } from "@/components/PageShell";
 import { ReminderBanner } from "@/components/ReminderBanner";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { CalendarIcon } from "@/components/ui/icons";
 import { FolderWatchSettings } from "@/components/desktop/FolderWatchSettings";
 import * as documentsRepo from "@/lib/db/repositories/documents";
-import * as collectionsRepo from "@/lib/db/repositories/collections";
 import * as eventsRepo from "@/lib/db/repositories/events";
 
 export const dynamic = "force-dynamic";
 
 function Stat({ label, value, href }: { label: string; value: number; href: string }) {
   return (
-    <Link href={href} className="card block hover:border-kura-accent">
+    <Link
+      href={href}
+      className="card block transition-shadow hover:border-kura-accent hover:shadow-md"
+    >
       <div className="text-3xl font-bold text-kura-accent">{value}</div>
       <div className="mt-1 text-sm text-gray-600">{label}</div>
     </Link>
@@ -21,7 +25,6 @@ function Stat({ label, value, href }: { label: string; value: number; href: stri
 export default async function DashboardPage() {
   const needsReview = documentsRepo.countByStatus("needs_review");
   const confirmed = documentsRepo.countByStatus("confirmed");
-  const collections = collectionsRepo.count();
   const upcoming = eventsRepo.listUpcoming(5);
   const reminders = eventsRepo.listDueReminders();
 
@@ -39,15 +42,14 @@ export default async function DashboardPage() {
             <Link href="/settings" className="font-medium underline">
               設定
             </Link>{" "}
-            で自分の Gemini API キーを登録してください。未登録の間も取り込みは動作しますが、
+            で自分の Gemini API キーを登録してください。未登録の間も整理(ファイルの振り分け)は動作しますが、
             分類・抽出・意味検索は「未設定」のスタブになります。
           </div>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Stat label="確認待ち" value={needsReview} href="/review" />
           <Stat label="確定済み" value={confirmed} href="/search" />
-          <Stat label="コレクション" value={collections} href="/collections" />
         </div>
 
         <section>
@@ -58,7 +60,11 @@ export default async function DashboardPage() {
             </Link>
           </div>
           {upcoming.length === 0 ? (
-            <div className="card text-sm text-gray-500">直近の期日はありません。</div>
+            <EmptyState
+              icon={<CalendarIcon />}
+              title="直近の期日はありません"
+              description="書類を整理して内容が確定すると、抽出された期日がここに表示されます。"
+            />
           ) : (
             <ul className="space-y-2">
               {upcoming.map((e) => (

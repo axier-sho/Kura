@@ -12,7 +12,7 @@ export function PageShell({
   return (
     <div className="min-h-screen">
       <Nav />
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="motion-safe:animate-fade-in mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{title}</h1>
           {description ? (

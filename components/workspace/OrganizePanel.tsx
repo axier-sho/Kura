@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ProcessConsole, useConsoleLog } from "@/components/ProcessConsole";
+import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/ui/ToastProvider";
 import { readNdjsonStream } from "@/lib/ndjson";
 
 interface OrganizeFileResult {
@@ -82,6 +84,7 @@ export function OrganizePanel({
   const [run, setRun] = useState<OrganizeRunResult | null>(null);
   const [isTauri, setIsTauri] = useState(false);
   const { logs, push: pushLog, clear: clearLogs } = useConsoleLog();
+  const toast = useToast();
 
   useEffect(() => {
     // window.__TAURI__ is absent during SSR; detect after mount so the first
@@ -128,8 +131,10 @@ export function OrganizePanel({
       if (!res.ok) throw new Error(data.error ?? "保存に失敗しました");
       setSavedDir(data.workingDir);
       await refresh();
+      toast.success("ワーキングディレクトリを保存しました");
     } catch (e) {
       setError((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -174,16 +179,19 @@ export function OrganizePanel({
         }
         break;
       }
-      case "done":
+      case "done": {
         setRun(event.summary);
-        pushLog(
-          event.summary.errors > 0 ? "warn" : "success",
-          `完了:処理 ${event.summary.processed} 件(移動 ${event.summary.moved}・保留 ${event.summary.held}・エラー ${event.summary.errors})`,
-        );
+        const { processed, moved, held, errors } = event.summary;
+        const summary = `完了:処理 ${processed} 件(移動 ${moved}・保留 ${held}・エラー ${errors})`;
+        pushLog(errors > 0 ? "warn" : "success", summary);
+        if (errors > 0) toast.warn(summary);
+        else toast.success(`整理が完了しました(移動 ${moved}・保留 ${held})`);
         break;
+      }
       case "error":
         pushLog("error", `整理に失敗しました: ${event.message}`);
         setError(event.message);
+        toast.error(`整理に失敗しました: ${event.message}`);
         break;
     }
   }
@@ -236,17 +244,17 @@ export function OrganizePanel({
             onChange={(e) => setWorkingDir(e.target.value)}
           />
           {isTauri && (
-            <button onClick={pickFolder} className="btn-ghost text-sm">
+            <Button variant="ghost" onClick={pickFolder} className="text-sm">
               フォルダを選択
-            </button>
+            </Button>
           )}
-          <button
+          <Button
             onClick={saveDir}
             disabled={busy || !workingDir}
-            className="btn-primary text-sm"
+            className="text-sm"
           >
             保存
-          </button>
+          </Button>
         </div>
         {savedDir && (
           <p className="text-xs text-gray-600">
@@ -274,13 +282,14 @@ export function OrganizePanel({
                   </span>
                 ))}
           </div>
-          <button
+          <Button
             onClick={organize}
-            disabled={busy || inboxCount === 0}
-            className="btn-primary w-full"
+            loading={busy}
+            disabled={inboxCount === 0}
+            className="w-full"
           >
             {busy ? "整理中…" : "整理する"}
-          </button>
+          </Button>
           {inboxCount === 0 && (
             <p className="text-xs text-gray-400">
               受信箱が空です。<code>_inbox</code>{" "}

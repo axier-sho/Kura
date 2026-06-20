@@ -64,8 +64,8 @@ function tabClass(active: boolean): string {
 /**
  * Live console for a streaming batch run: a "コンソール" tab that tails per-item
  * progress lines plus an optional "結果" tab hosting a caller-supplied summary.
- * Shared by the organize and upload panels so both give identical feedback —
- * the user can always tell whether work is progressing or has failed.
+ * Used by the organize panel so the user can always tell whether work is
+ * progressing or has failed.
  */
 export function ProcessConsole({
   logs,
