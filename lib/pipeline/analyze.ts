@@ -14,7 +14,7 @@ import type {
 } from "@/lib/pipeline/types";
 
 /** Escalate to the stronger model below this confidence. */
-const ESCALATION_THRESHOLD = 0.6;
+export const ESCALATION_THRESHOLD = 0.6;
 
 function stripFences(s: string): string {
   const trimmed = s.trim();
@@ -34,7 +34,7 @@ function toStr(v: unknown): string | null {
  * dates (e.g. 2026-02-30), which the Postgres `date` column rejects, failing the
  * whole events insert; round-tripping through Date catches those.
  */
-function isRealCalendarDate(s: string): boolean {
+export function isRealCalendarDate(s: string): boolean {
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return false;
   const year = Number(m[1]);
@@ -48,7 +48,7 @@ function isRealCalendarDate(s: string): boolean {
   );
 }
 
-function normalizeEvents(raw: unknown): ExtractedEvent[] {
+export function normalizeEvents(raw: unknown): ExtractedEvent[] {
   if (!Array.isArray(raw)) return [];
   const out: ExtractedEvent[] = [];
   for (const e of raw) {
@@ -69,7 +69,7 @@ function normalizeEvents(raw: unknown): ExtractedEvent[] {
   return out;
 }
 
-function normalizeFields(raw: unknown): Record<string, string | number | null> {
+export function normalizeFields(raw: unknown): Record<string, string | number | null> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: Record<string, string | number | null> = {};
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
@@ -82,7 +82,7 @@ function normalizeFields(raw: unknown): Record<string, string | number | null> {
   return out;
 }
 
-function parseAnalysis(text: string, model: string): AnalysisResult {
+export function parseAnalysis(text: string, model: string): AnalysisResult {
   let parsed: Record<string, unknown> = {};
   try {
     // JSON.parse("null") / a JSON array succeed but aren't usable objects;

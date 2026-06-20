@@ -5,7 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { assertInside } from "@/lib/workspace/paths";
-import { INBOX_NAME } from "@/lib/workspace/settings";
+import { INBOX_NAME } from "@/lib/workspace/constants";
 
 export interface WorkspaceListing {
   workingDir: string;

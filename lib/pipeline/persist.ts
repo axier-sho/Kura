@@ -38,38 +38,53 @@ export async function persistDocument(
   // commits, the caller reports the file as failed, and the user's retry hits
   // the content-hash cache (findCached) and skips the events block forever —
   // silently and permanently dropping the reminders this app exists to surface.
-  const documentId = transaction(() => {
-    const id = documents.insertDocument({
-      collectionId,
-      contentHash: hash,
-      docType: analysis.doc_type,
-      title: analysis.title,
-      extractedFields: analysis.fields,
-      keywords: analysis.keywords,
-      embedding,
-      confidence: analysis.confidence,
-      model: analysis.model,
-      promptVersion: analysis.prompt_version,
-      storagePath,
-      originalFilename: input.filename,
-      mimeType: input.mimeType,
-      isStub: analysis.is_stub,
-    });
+  let documentId: string;
+  try {
+    documentId = transaction(() => {
+      const id = documents.insertDocument({
+        collectionId,
+        contentHash: hash,
+        docType: analysis.doc_type,
+        title: analysis.title,
+        extractedFields: analysis.fields,
+        keywords: analysis.keywords,
+        embedding,
+        confidence: analysis.confidence,
+        model: analysis.model,
+        promptVersion: analysis.prompt_version,
+        storagePath,
+        originalFilename: input.filename,
+        mimeType: input.mimeType,
+        isStub: analysis.is_stub,
+      });
 
-    if (analysis.events.length > 0) {
-      events.insertMany(
-        analysis.events.map((e) => ({
-          documentId: id,
-          collectionId,
-          eventType: e.event_type,
-          dueDate: e.due_date,
-          notifyLeadDays: e.notify_lead_days,
-          actionNeeded: e.action_needed,
-        })),
-      );
+      if (analysis.events.length > 0) {
+        events.insertMany(
+          analysis.events.map((e) => ({
+            documentId: id,
+            collectionId,
+            eventType: e.event_type,
+            dueDate: e.due_date,
+            notifyLeadDays: e.notify_lead_days,
+            actionNeeded: e.action_needed,
+          })),
+        );
+      }
+      return id;
+    });
+  } catch (err) {
+    // Concurrency race: a sibling ingest (same batch under bounded concurrency,
+    // or a second overlapping request) inserted the same content_hash +
+    // prompt_version between the findCached miss above and this insert, tripping
+    // the UNIQUE constraint. The transaction rolled back fully, so re-resolve the
+    // winning row and treat this as a cache hit instead of failing the file.
+    const code = (err as { code?: string }).code ?? "";
+    if (code.startsWith("SQLITE_CONSTRAINT")) {
+      const raced = documents.findCached(hash, PROMPT_VERSION);
+      if (raced) return { documentId: raced.id, cached: true };
     }
-    return id;
-  });
+    throw err;
+  }
 
   return { documentId, cached: false };
 }

@@ -11,11 +11,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as settings from "@/lib/db/repositories/settings";
+import { INBOX_NAME, WORKING_DIR_KEY } from "@/lib/workspace/constants";
 
-export const WORKING_DIR_KEY = "working_dir";
-
-/** Name of the inbox subfolder where files to be organized are dropped. */
-export const INBOX_NAME = "_inbox";
+// Re-export for back-compat: existing importers reference these from here.
+export { INBOX_NAME, WORKING_DIR_KEY };
 
 export function getWorkingDir(): string | null {
   return settings.get(WORKING_DIR_KEY);

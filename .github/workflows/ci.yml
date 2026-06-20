@@ -1,0 +1,37 @@
+name: CI (web)
+
+# Guards the Next.js web app on every push to main and every PR: lint, type
+# check, unit tests, and a production build. Complements desktop-build.yml (which
+# only builds the Windows binary on tags / manual runs).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches .nvmrc, package.json engines, and the desktop sidecar ABI
+          # (native better-sqlite3 is built during npm ci).
+          node-version: 20
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
