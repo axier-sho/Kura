@@ -47,6 +47,9 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes;
 }
 
+/** Window during which a repeat event for the same file is treated as a dup. */
+const COOLDOWN_MS = 15_000;
+
 export function FolderWatchSettings() {
   const [isTauri, setIsTauri] = useState(false);
   const [folder, setFolder] = useState<string | null>(null);
@@ -77,7 +80,7 @@ export function FolderWatchSettings() {
       // the same completed file would otherwise create a duplicate document.
       const nowMs = Date.now();
       const last = recent.current.get(path);
-      if (seen.current.has(path) || (last !== undefined && nowMs - last < 15_000)) {
+      if (seen.current.has(path) || (last !== undefined && nowMs - last < COOLDOWN_MS)) {
         return;
       }
       seen.current.add(path);
@@ -106,6 +109,13 @@ export function FolderWatchSettings() {
         addLog(`エラー: ${errorMessage(e)}`);
       } finally {
         seen.current.delete(path);
+        // Prune entries past the cooldown window before recording this one, so
+        // the dedup map stays bounded by files-seen-per-window instead of
+        // growing one permanent entry per unique path for the whole session.
+        const cutoff = Date.now() - COOLDOWN_MS;
+        for (const [p, t] of recent.current) {
+          if (t < cutoff) recent.current.delete(p);
+        }
         recent.current.set(path, Date.now());
       }
     },

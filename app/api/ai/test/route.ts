@@ -38,14 +38,18 @@ function friendlyGeminiError(err: unknown): string {
  * as a "解析エラー" stub.
  */
 export async function POST() {
-  const ai = getAiConfig();
-  if (!ai.configured) {
-    return NextResponse.json({
-      ok: false,
-      error: "API キーが設定されていません。",
-    });
-  }
   try {
+    // getAiConfig() reads settings via getDb(), which lazily opens SQLite on the
+    // first request of the worker process. Keep it inside the try so a DB-open
+    // failure still returns this route's { ok, error } JSON contract rather than
+    // Next's 500 HTML page (which the client parses as {} → misleading message).
+    const ai = getAiConfig();
+    if (!ai.configured) {
+      return NextResponse.json({
+        ok: false,
+        error: "API キーが設定されていません。",
+      });
+    }
     await generate({
       apiKey: ai.apiKey,
       model: ai.model,

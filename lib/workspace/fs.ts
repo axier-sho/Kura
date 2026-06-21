@@ -95,8 +95,21 @@ export function moveFile(
     fs.renameSync(srcAbs, dest);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "EXDEV") {
+      // Cross-filesystem move: copy then remove the source. copy+unlink is not
+      // atomic, so if the unlink fails (read-only/locked source, EBUSY on
+      // Windows) delete the just-written copy before rethrowing — otherwise the
+      // file is left in BOTH locations while the caller is told the move failed.
       fs.copyFileSync(srcAbs, dest);
-      fs.unlinkSync(srcAbs);
+      try {
+        fs.unlinkSync(srcAbs);
+      } catch (unlinkErr) {
+        try {
+          fs.unlinkSync(dest);
+        } catch {
+          // Best-effort cleanup; surface the original unlink failure below.
+        }
+        throw unlinkErr;
+      }
     } else {
       throw err;
     }

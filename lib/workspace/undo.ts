@@ -73,7 +73,18 @@ export function undoOrganizeRun(runId: string): UndoResult {
         // the whole step — otherwise the retry would see the file already gone
         // from toPath, skip it, and leave the row pointing at the empty old path.
         try {
-          moveFile(workingDir, restoredPath, path.dirname(m.toPath), m.filename);
+          // Restore under toPath's actual basename — which uniqueDestPath may
+          // have de-duplicated to "name (2).ext" at organize time — NOT
+          // m.filename (the original inbox name). Otherwise the file lands at a
+          // different unique name, the row still points at m.toPath, and the
+          // retry's existsSync(m.toPath) guard skips it, breaking the file+row
+          // invariant this rollback exists to preserve.
+          moveFile(
+            workingDir,
+            restoredPath,
+            path.dirname(m.toPath),
+            path.basename(m.toPath),
+          );
         } catch (rollbackErr) {
           console.error("[kura] failed to roll back undo move:", rollbackErr);
         }

@@ -104,14 +104,18 @@ CREATE INDEX IF NOT EXISTS organize_runs_created_idx ON organize_runs(created_at
 const BASELINE_VERSION = 1;
 const MIGRATIONS: Array<(db: Database.Database) => void> = [];
 
-function migrate(db: Database.Database): void {
+function migrate(db: Database.Database, isFresh: boolean): void {
   let version = db.pragma("user_version", { simple: true }) as number;
   if (version === 0) {
-    // Either a brand-new DB (the base tables were just created) or a pre-
-    // versioning DB that already carries the baseline columns. Either way it is
-    // at the baseline; stamp it so future migrations have a starting point.
-    version = BASELINE_VERSION;
-    db.pragma(`user_version = ${BASELINE_VERSION}`);
+    // user_version 0 means either a brand-new DB just created with the latest
+    // SCHEMA (already at the head version, so it must run NO migrations), or a
+    // pre-versioning DB that carries only the original baseline columns (so it
+    // must replay the full MIGRATIONS list). These are indistinguishable from
+    // user_version alone — hence the isFresh flag captured before the schema is
+    // created. Stamping a fresh DB at BASELINE_VERSION would wrongly re-apply
+    // every migration's ALTER TABLE against columns SCHEMA already added.
+    version = isFresh ? BASELINE_VERSION + MIGRATIONS.length : BASELINE_VERSION;
+    db.pragma(`user_version = ${version}`);
   }
   for (let i = version - BASELINE_VERSION; i >= 0 && i < MIGRATIONS.length; i++) {
     db.transaction(() => MIGRATIONS[i](db))();
@@ -124,8 +128,18 @@ function open(): Database.Database {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  // Capture whether this is a brand-new DB BEFORE creating the schema: a fresh
+  // file has no user tables yet, whereas a pre-versioning DB already carries the
+  // baseline tables. migrate() needs this to decide whether to replay migrations.
+  const tableCount = (
+    db
+      .prepare(
+        "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+      )
+      .get() as { n: number }
+  ).n;
   db.exec(SCHEMA);
-  migrate(db);
+  migrate(db, tableCount === 0);
   return db;
 }
 
